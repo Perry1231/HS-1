@@ -1,74 +1,75 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <SoftwareWire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 
-// Піни I2C для ESP32-C3
-const int I2C_SDA = 3;
-const int I2C_SCL = 2;
+// Апаратна шина (Плече)
+#define HARD_SDA 3
+#define HARD_SCL 2
 
-// Створюємо 2 об'єкти з різними адресами
-Adafruit_BNO055 bnoShoulder = Adafruit_BNO055(1, 0x28); // Плече (ADD на GND)
-Adafruit_BNO055 bnoBiceps   = Adafruit_BNO055(2, 0x29); // Біцепс (ADD на 3.3V)
+// Програмна шина (Біцепс)
+#define SOFT_SDA 4
+#define SOFT_SCL 5
 
-bool shoulderReady = false;
-bool bicepsReady   = false;
+// 1. Апаратний I2C
+Adafruit_BNO055 bnoShoulder = Adafruit_BNO055(1, 0x28, &Wire);
+
+// 2. Програмний I2C на GPIO 4 / GPIO 5
+SoftwareWire mySoftwareWire(SOFT_SDA, SOFT_SCL);
+Adafruit_BNO055 bnoBiceps = Adafruit_BNO055(2, 0x28, (TwoWire*)&mySoftwareWire);
+
+bool shoulderOK = false;
+bool bicepsOK   = false;
 
 void setup() {
   Serial.begin(115200);
+  delay(2000);
 
-  while (!Serial) {
-    delay(10);
-  }
+  Serial.println("\n=== ЗАПУСК ВУЗЛА ПЛЕЧЕ + БІЦЕПС ===");
 
-  Serial.println("\n=== ВУЗОЛ ПЛЕЧЕ + БІЦЕПС (2x BNO055) ===");
-
-  // Запуск шини I2C
-  Wire.begin(I2C_SDA, I2C_SCL);
-
-  // 1. Ініціалізація датчика Плеча (0x28)
-  Serial.print("Ініціалізація BNO055 Плече (0x28)... ");
+  // Ініціалізація апаратного I2C (Плече)
+  Wire.begin(HARD_SDA, HARD_SCL, 100000);
+  Serial.print("1. Датчик Плеча (GPIO 3/2)... ");
   if (bnoShoulder.begin()) {
     Serial.println("УСПІШНО!");
-    bnoShoulder.setExtCrystalUse(false); // Внутрішній генератор
-    shoulderReady = true;
+    bnoShoulder.setExtCrystalUse(false);
+    shoulderOK = true;
   } else {
-    Serial.println("ПОМИЛКА! Не знайдено.");
+    Serial.println("ПОМИЛКА (Перевірте пайку SDA/SCL)");
   }
 
-  // 2. Ініціалізація датчика Біцепса (0x29)
-  Serial.print("Ініціалізація BNO055 Біцепс (0x29)... ");
+  // Ініціалізація програмного I2C (Біцепс)
+  mySoftwareWire.begin();
+  Serial.print("2. Датчик Біцепса (GPIO 4/5)... ");
   if (bnoBiceps.begin()) {
     Serial.println("УСПІШНО!");
-    bnoBiceps.setExtCrystalUse(false); // Внутрішній генератор
-    bicepsReady = true;
+    bnoBiceps.setExtCrystalUse(false);
+    bicepsOK = true;
   } else {
-    Serial.println("ПОМИЛКА! Не знайдено (перевірь пін ADD на 3.3V).");
+    Serial.println("ПОМИЛКА (Перевірте пайку SDA/SCL на GPIO 4/5)");
   }
 
-  Serial.println("--------------------------------------------------");
+  Serial.println("----------------------------------------");
 }
 
 void loop() {
-  // Зчитуємо датчик Плеча
-  if (shoulderReady) {
-    sensors_event_t event1;
-    bnoShoulder.getEvent(&event1);
-    Serial.print("Плече [X]: "); 
-    Serial.print(event1.orientation.x, 1);
-  } else {
-    Serial.print("Плече: N/A");
+  if (shoulderOK) {
+    sensors_event_t e1;
+    bnoShoulder.getEvent(&e1);
+    Serial.print("Плече X: ");
+    Serial.print(e1.orientation.x, 1);
   }
 
-  // Зчитуємо датчик Біцепса
-  if (bicepsReady) {
-    sensors_event_t event2;
-    bnoBiceps.getEvent(&event2);
-    Serial.print("\t| Біцепс [X]: "); 
-    Serial.println(event2.orientation.x, 1);
+  if (bicepsOK) {
+    sensors_event_t e2;
+    bnoBiceps.getEvent(&e2);
+    Serial.print("° \t| Біцепс X: ");
+    Serial.print(e2.orientation.x, 1);
+    Serial.println("°");
   } else {
-    Serial.println("\t| Біцепс: N/A");
+    Serial.println();
   }
 
-  delay(50); // ~20 оновлень на секунду
+  delay(40);
 }
