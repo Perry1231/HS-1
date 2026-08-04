@@ -1034,6 +1034,74 @@
 			(embedded_fonts no)
 		)
 	)
+	(no_connect
+		(at 118.11 101.6)
+		(uuid "09632b0e-ebf2-4ef3-9d9c-470f35555ebf")
+	)
+	(no_connect
+		(at 130.81 101.6)
+		(uuid "0e1e21db-db14-4795-a61d-1e699f5f395f")
+	)
+	(no_connect
+		(at 120.65 132.08)
+		(uuid "27488e78-0825-4e79-9763-15b7ce212d07")
+	)
+	(no_connect
+		(at 128.27 101.6)
+		(uuid "2a20cc90-ec2f-44c1-b1ea-857f179a71bb")
+	)
+	(no_connect
+		(at 125.73 101.6)
+		(uuid "31775454-19ff-434c-98ea-b3414a3b58f6")
+	)
+	(no_connect
+		(at 137.16 85.09)
+		(uuid "3656f41b-bf5b-426d-a6d3-d5db5a67ed40")
+	)
+	(no_connect
+		(at 148.59 85.09)
+		(uuid "3811d9ef-9265-4dfe-87ee-04c21a53b4ee")
+	)
+	(no_connect
+		(at 144.78 85.09)
+		(uuid "39808624-285b-43f8-8940-75a4f97e01cc")
+	)
+	(no_connect
+		(at 130.81 132.08)
+		(uuid "606556f6-c56d-4bf1-815c-87d34ec87979")
+	)
+	(no_connect
+		(at 133.35 132.08)
+		(uuid "7886284a-26d2-45b0-aa3c-2ba27cd92aee")
+	)
+	(no_connect
+		(at 138.43 132.08)
+		(uuid "7cc98315-56d0-4303-abbb-041925c89e28")
+	)
+	(no_connect
+		(at 120.65 101.6)
+		(uuid "8993dae8-49aa-4f9c-8ff5-d0ef0d1e8c43")
+	)
+	(no_connect
+		(at 123.19 101.6)
+		(uuid "8ae5cdb1-c31f-4b17-8fe9-e7605878346a")
+	)
+	(no_connect
+		(at 138.43 101.6)
+		(uuid "a02efeca-0d13-412b-8e9d-260144042f90")
+	)
+	(no_connect
+		(at 118.11 132.08)
+		(uuid "a2a16e5a-99e2-4107-9af3-5430c788a550")
+	)
+	(no_connect
+		(at 135.89 101.6)
+		(uuid "ad404add-4ba0-4ecf-a773-e6c36cef94e4")
+	)
+	(no_connect
+		(at 133.35 101.6)
+		(uuid "fcd274ac-abed-4552-8bf6-064cd6ff6a32")
+	)
 	(wire
 		(pts
 			(xy 125.73 132.08) (xy 125.73 137.16)
@@ -1308,7 +1376,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "BNO_055:Без назви"
 			(at 129.54 78.74 0)
 			(hide yes)
 			(show_name no)
