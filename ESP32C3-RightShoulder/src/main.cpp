@@ -3,70 +3,142 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 
-const int I2C_SDA = 3; // SDA на GPIO 3
-const int I2C_SCL = 2; // SCL на GPIO 2
+// --- Конфігурація пінів для Adafruit QT Py ESP32-C3 ---
+#define SDA_PIN SDA
+#define SCL_PIN SCL
+#define BNO055_ADDR 0x28
 
-Adafruit_BNO055 bno28 = Adafruit_BNO055(55, 0x28);
-Adafruit_BNO055 bno29 = Adafruit_BNO055(55, 0x29);
+Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
 
-Adafruit_BNO055* activeBno = NULL;
+bool sensorReady = false;
+uint32_t frameCount = 0;
+uint32_t lastFpsCalc = 0;
+float currentFps = 0.0;
+
+// Малювання горизонтальної шкали-слайдера
+void drawAxisBar(float val, float minV, float maxV, int width = 14) {
+  float norm = (val - minV) / (maxV - minV);
+  if (norm < 0.0) norm = 0.0;
+  if (norm > 1.0) norm = 1.0;
+
+  int pos = norm * width;
+  int center = width / 2;
+
+  Serial.print("[");
+  for (int i = 0; i <= width; ++i) {
+    if (i == pos) {
+      Serial.print("◆"); // Поточний маркер кута
+    } else if (i == center) {
+      Serial.print("│"); // Нульовий центр
+    } else {
+      Serial.print("─");
+    }
+  }
+  Serial.print("]");
+}
+
+// Оформлення статусу калібрування (0..3)
+void printCalibBadge(uint8_t sys, uint8_t gyro, uint8_t accel, uint8_t mag) {
+  Serial.print("CALIB: ");
+  Serial.print("SYS:"); Serial.print(sys);   Serial.print(" ");
+  Serial.print("G:");   Serial.print(gyro);  Serial.print(" ");
+  Serial.print("A:");   Serial.print(accel); Serial.print(" ");
+  Serial.print("M:");   Serial.print(mag);
+  
+  if (sys == 3) {
+    Serial.print(" [  FULL  ]");
+  } else if (sys > 0) {
+    Serial.print(" [ MID-CAL ]");
+  } else {
+    Serial.print(" [ NO-CAL  ]");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
+  delay(2000); 
 
-  while (!Serial) {
-    delay(10);
-  }
+  // Ефектний заголовок та логотип системи
+  Serial.println("\n");
+  Serial.println(" ░▒▓████████████████████████████████████████████████████████▓▒░");
+  Serial.println(" ░▒▓█      BNO055 ORIENTATION HUD - ESP32-C3 QT Py     █▓▒░");
+  Serial.println(" ░▒▓████████████████████████████████████████████████████████▓▒░");
+  Serial.println("  ├── Hardware Subsystem : Adafruit QT Py ESP32-C3");
+  Serial.println("  ├── Protocol Interface : I2C Bus (Fast Mode 100kHz)");
+  Serial.println("  └── Target Address     : 0x28 (Default Mode)");
+  Serial.println(" ──────────────────────────────────────────────────────────────");
 
-  Serial.println("\n=== ТЕСТ BNO055 (ВНУТРІШНІЙ ГЕНЕРАТОР): SDA=3, SCL=2 ===");
+  Wire.begin(SDA_PIN, SCL_PIN, 100000);
 
-  Wire.begin(I2C_SDA, I2C_SCL);
+  Serial.print("  [SYSTEM INIT] Connecting to BNO055...");
 
-  Serial.print("Спроба підключення до 0x28... ");
-  if (bno28.begin()) {
-    Serial.println("ЗНАЙДЕНО (0x28)!");
-    activeBno = &bno28;
+  if (bno.begin(OPERATION_MODE_NDOF)) {
+    bno.setExtCrystalUse(false);
+    sensorReady = true;
+    Serial.println(" [  OK - ONLINE  ]");
   } else {
-    Serial.println("немає відповіді.");
-    Serial.print("Спроба підключення до 0x29... ");
-    if (bno29.begin()) {
-      Serial.println("ЗНАЙДЕНО (0x29)!");
-      activeBno = &bno29;
-    } else {
-      Serial.println("немає відповіді.");
-    }
+    Serial.println(" [  FAILED - N/A  ]");
+    Serial.println("\n  ❌ CRITICAL ERROR: Sensor non-responsive.");
+    Serial.println("     Please check GND connection on COM3 pin and I2C lines.\n");
   }
 
-  if (activeBno == NULL) {
-    Serial.println("\n[ПОМИЛКА] Датчик BNO055 не відповідає!");
-    while (1) {
-      delay(1000);
-    }
-  }
+  Serial.println(" ──────────────────────────────────────────────────────────────\n");
+  delay(1200);
 
-  // Явно вимикаємо зовнішній кварц — використовуємо ВНУТРІШНІЙ генератор
-  activeBno->setExtCrystalUse(false);
-  
-  Serial.println("Датчик готовий до роботи!");
-  Serial.println("--------------------------------------------------");
+  if (sensorReady) {
+    Serial.println("  YAW (Z: 0..360°)     PITCH (Y: ±180°)     ROLL (X: ±90°)       FPS   STATUS");
+    Serial.println(" ══════════════════════════════════════════════════════════════════════════════════");
+  }
 }
 
 void loop() {
+  if (!sensorReady) {
+    Serial.println(" ⚠️ [ALERT] Searching for device on I2C bus...");
+    delay(1000);
+    return;
+  }
+
+  // Розрахунок реального FPS оновлення даних
+  frameCount++;
+  uint32_t now = millis();
+  if (now - lastFpsCalc >= 1000) {
+    currentFps = frameCount * 1000.0 / (now - lastFpsCalc);
+    frameCount = 0;
+    lastFpsCalc = now;
+  }
+
+  // Отримання даних орієнтації
   sensors_event_t event;
-  activeBno->getEvent(&event);
+  bno.getEvent(&event);
 
-  // Отримуємо статус калібрування
+  // Отримання стану калібрування
   uint8_t sys, gyro, accel, mag;
-  sys = gyro = accel = mag = 0;
-  activeBno->getCalibration(&sys, &gyro, &accel, &mag);
+  bno.getCalibration(&sys, &gyro, &accel, &mag);
 
-  Serial.print("X (Yaw): "); Serial.print(event.orientation.x, 1);
-  Serial.print("° \t| Y (Roll): "); Serial.print(event.orientation.y, 1);
-  Serial.print("° \t| Z (Pitch): "); Serial.print(event.orientation.z, 1);
-  Serial.print("° \t[Calib Sys:"); Serial.print(sys);
-  Serial.print(" G:"); Serial.print(gyro);
-  Serial.print(" A:"); Serial.print(accel);
-  Serial.print(" M:"); Serial.print(mag); Serial.println("]");
+  float yaw   = event.orientation.x; 
+  float pitch = event.orientation.y; 
+  float roll  = event.orientation.z; 
 
-  delay(100);
+  // Форматоване виведення кутів
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "  %5.1f° ", yaw);
+  Serial.print(buffer);
+  drawAxisBar(yaw, 0.0, 360.0, 10);
+
+  snprintf(buffer, sizeof(buffer), "  %5.1f° ", pitch);
+  Serial.print(buffer);
+  drawAxisBar(pitch, -180.0, 180.0, 10);
+
+  snprintf(buffer, sizeof(buffer), "  %5.1f° ", roll);
+  Serial.print(buffer);
+  drawAxisBar(roll, -90.0, 90.0, 10);
+
+  // FPS + статус калібрування
+  snprintf(buffer, sizeof(buffer), "  %4.1f ", currentFps);
+  Serial.print(buffer);
+
+  printCalibBadge(sys, gyro, accel, mag);
+  Serial.println();
+
+  delay(40); // ~25 FPS
 }
