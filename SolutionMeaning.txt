@@ -1,0 +1,21 @@
+=========Commit attributes======================================================================================================================================================
+C --- Code change / Code commit
+D --- Document adding / Document fix
+
+
+
+
+
+
+
+=========Other changes==========================================================================================================================================================
+1)There will be version in commits , like : 16.2, 16,3 ---> this is same version for multiply circuits(modules) 
+
+
+
+
+2)The main version of code for modules is the latest number in their folder , like : 
+
+ESP232C3_RIGHT-SOULDER
+ESP232C3_RIGHT-SOULDER_2.0
+ESP232C3_RIGHT-SOULDER_3.0 ---> so the main version using from these will be **3.0**
