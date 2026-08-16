@@ -6,7 +6,7 @@
 
 #define SDA_PIN 3
 #define SCL_PIN 2
-#define RX_PIN  1  // Прийом від Передпліччя (GPIO 1)
+#define RX_PIN  1  // Вхід UART від Передпліччя (GPIO 1)
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 HardwareSerial LinkSerial(1);
@@ -14,24 +14,17 @@ HardwareSerial LinkSerial(1);
 FullArmPacket fullArm;
 
 void setup() {
-  Serial.begin(115200); // USB CDC для монітора порту
-  
-  // Очікуємо ініціалізацію Serial
+  Serial.begin(115200); // USB CDC для зв'язку з ПК
+
   uint32_t startWait = millis();
   while (!Serial && (millis() - startWait < 3000)) delay(10);
 
-  // Налаштування UART (Тільки RX на GPIO 1)
-  LinkSerial.begin(115200, SERIAL_8N1, RX_PIN, -1);
-
+  LinkSerial.begin(115200, SERIAL_8N1, RX_PIN, -1); // Тільки RX
   Wire.begin(SDA_PIN, SCL_PIN, 100000);
 
   if (bno.begin(OPERATION_MODE_NDOF)) {
     bno.setExtCrystalUse(false);
   }
-
-  Serial.println("\n=======================================================");
-  Serial.println("   ПЛЕЧОВИЙ ХАБ СТАРТУВАВ — КАСКАД ВУЗЛІВ АКТИВНИЙ    ");
-  Serial.println("=======================================================\n");
 }
 
 void loop() {
@@ -54,22 +47,28 @@ void loop() {
   fullArm.shoulder.calibSys = sys;
   fullArm.shoulder.calibGyro = gyro;
 
-  // 3. Обчислюємо контрольную суму
-  fullArm.checksum = calculateChecksum((uint8_t*)&fullArm, sizeof(FullArmPacket) - 1);
+  // 3. Формуємо та відправляємо один суцільний JSON-рядок у Serial
+  Serial.print("{\"hand\":{\"y\":"); 
+  Serial.print(fullArm.hand.yaw, 1);
+  Serial.print(",\"p\":"); 
+  Serial.print(fullArm.hand.pitch, 1);
+  Serial.print(",\"r\":"); 
+  Serial.print(fullArm.hand.roll, 1);
 
-  // 4. Форматований вивід усіх 3-х суглобів
-  Serial.print("КИСТЬ [Y:"); Serial.print(fullArm.hand.yaw, 1);
-  Serial.print("° P:"); Serial.print(fullArm.hand.pitch, 1);
-  Serial.print("° R:"); Serial.print(fullArm.hand.roll, 1);
-  
-  Serial.print("°] | ПЕРЕДПЛІЧЧЯ [Y:"); Serial.print(fullArm.forearm.yaw, 1);
-  Serial.print("° P:"); Serial.print(fullArm.forearm.pitch, 1);
-  Serial.print("° R:"); Serial.print(fullArm.forearm.roll, 1);
+  Serial.print("},\"forearm\":{\"y\":"); 
+  Serial.print(fullArm.forearm.yaw, 1);
+  Serial.print(",\"p\":"); 
+  Serial.print(fullArm.forearm.pitch, 1);
+  Serial.print(",\"r\":"); 
+  Serial.print(fullArm.forearm.roll, 1);
 
-  Serial.print("°] | ПЛЕЧЕ [Y:"); Serial.print(fullArm.shoulder.yaw, 1);
-  Serial.print("° P:"); Serial.print(fullArm.shoulder.pitch, 1);
-  Serial.print("° R:"); Serial.print(fullArm.shoulder.roll, 1);
-  Serial.println("°]");
+  Serial.print("},\"shoulder\":{\"y\":"); 
+  Serial.print(fullArm.shoulder.yaw, 1);
+  Serial.print(",\"p\":"); 
+  Serial.print(fullArm.shoulder.pitch, 1);
+  Serial.print(",\"r\":"); 
+  Serial.print(fullArm.shoulder.roll, 1);
+  Serial.println("}}");
 
-  delay(40); // ~25 Гц
+  delay(20); // ~50 Гц (50 оновлень кадру на секунду)
 }
