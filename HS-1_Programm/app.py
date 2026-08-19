@@ -1,26 +1,46 @@
 import json
+import os
 import serial
 from ursina import *
 
-# COM port configuration (change the port to match your ESP32)SERIAL_PORT = 'COM4'
+SERIAL_PORT = 'COM4'
 BAUD_RATE = 115200
 
+# 1. Безпечне підключення до COM-порту
 try:
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.01)
     print(f"[OK] Порт {SERIAL_PORT} успішно відкрито")
 except Exception as e:
-    print(f"[УВАГА] Не вдалося відкрити порт {SERIAL_PORT}: {e}")
+    print(f"[ІНФО] COM-порт не підключено ({e}). Візуалізатор працює у тестовому режимі.")
     ser = None
 
 app = Ursina(title="HS-1 Kinematic Suit - Realtime Visualizer")
 
-# Loading 3D models
-# scale=0.001 converts millimeters from Fusion 360 to meters for Ursina
-# Завантаження 3D-моделей з підпапки Models
-# scale=0.001 переводить міліметри з Fusion 360 у метри для Ursina
-shoulder = Entity(model='Models/shoulder.obj', color=color.azure, scale=0.001, position=(0, 0, 0))
-forearm = Entity(model='Models/forearm.obj', color=color.orange, scale=1, parent=shoulder, position=(0, -0.28, 0))
-hand = Entity(model='Models/hand.obj', color=color.lime, scale=1, parent=forearm, position=(0, -0.24, 0))
+# 2. Функція перевірки наявності 3D-файлу
+def get_model(path):
+    if os.path.exists(path):
+        print(f"[OK] Знайдено 3D-модель: {path}")
+        return path
+    else:
+        print(f"[УВАГА] Файл {path} не знайдено! Використовуємо тимчасовий куб.")
+        return 'cube'
+
+sh_model = get_model('Models/shoulder.obj')
+fo_model = get_model('Models/forearm.obj')
+ha_model = get_model('Models/hand.obj')
+
+# 3. Налаштування масштабу залежно від типу моделі
+sh_scale = 0.001 if sh_model != 'cube' else (0.3, 1.2, 0.3)
+fo_scale = 1 if fo_model != 'cube' else (0.8, 0.9, 0.8)
+ha_scale = 1 if ha_model != 'cube' else (0.8, 0.5, 0.8)
+
+fo_pos = (0, -0.28, 0) if sh_model != 'cube' else (0, -1.1, 0)
+ha_pos = (0, -0.24, 0) if fo_model != 'cube' else (0, -0.9, 0)
+
+# 4. Створення об'єктів
+shoulder = Entity(model=sh_model, color=color.azure, scale=sh_scale, position=(0, 0, 0))
+forearm = Entity(model=fo_model, color=color.orange, scale=fo_scale, parent=shoulder, position=fo_pos)
+hand = Entity(model=ha_model, color=color.lime, scale=ha_scale, parent=forearm, position=ha_pos)
 
 EditorCamera()
 Grid(color=color.gray, size=10)
@@ -32,7 +52,6 @@ def update():
             if raw_line.startswith('{') and raw_line.endswith('}'):
                 data = json.loads(raw_line)
                 
-                #Pitch, Yaw, Roll
                 if 'shoulder' in data:
                     s = data['shoulder']
                     shoulder.rotation = (s.get('p', 0), s.get('y', 0), -s.get('r', 0))
