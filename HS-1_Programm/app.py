@@ -6,7 +6,6 @@ from ursina import *
 SERIAL_PORT = 'COM4'
 BAUD_RATE = 115200
 
-# 1. Безпечне підключення до COM-порту
 try:
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.01)
     print(f"[OK] Порт {SERIAL_PORT} успішно відкрито")
@@ -16,36 +15,51 @@ except Exception as e:
 
 app = Ursina(title="HS-1 Kinematic Suit - Realtime Visualizer")
 
-# 2. Функція перевірки наявності 3D-файлу
 def get_model(path):
     if os.path.exists(path):
-        print(f"[OK] Знайдено 3D-модель: {path}")
         return path
     else:
-        print(f"[УВАГА] Файл {path} не знайдено! Використовуємо тимчасовий куб.")
         return 'cube'
 
 sh_model = get_model('Models/shoulder.obj')
 fo_model = get_model('Models/forearm.obj')
 ha_model = get_model('Models/hand.obj')
 
-# 3. Налаштування масштабу залежно від типу моделі
+# Масштабування деталей з мм у м
 sh_scale = 0.001 if sh_model != 'cube' else (0.3, 1.2, 0.3)
-fo_scale = 1 if fo_model != 'cube' else (0.8, 0.9, 0.8)
-ha_scale = 1 if ha_model != 'cube' else (0.8, 0.5, 0.8)
+fo_scale = 0.001 if fo_model != 'cube' else (0.8, 0.9, 0.8)
+ha_scale = 0.001 if ha_model != 'cube' else (0.8, 0.5, 0.8)
 
-fo_pos = (0, -0.28, 0) if sh_model != 'cube' else (0, -1.1, 0)
-ha_pos = (0, -0.24, 0) if fo_model != 'cube' else (0, -0.9, 0)
+# 1. Розносимо об'єкти на 3 метри один від одного по осі X
+shoulder = Entity(model=sh_model, color=color.azure, scale=sh_scale, position=(-3.0, 0, 0))
+forearm = Entity(model=fo_model, color=color.orange, scale=fo_scale, position=(0, 0, 0))
+hand = Entity(model=ha_model, color=color.lime, scale=ha_scale, position=(3.0, 0, 0))
 
-# 4. Створення об'єктів
-shoulder = Entity(model=sh_model, color=color.azure, scale=sh_scale, position=(0, 0, 0))
-forearm = Entity(model=fo_model, color=color.orange, scale=fo_scale, parent=shoulder, position=fo_pos)
-hand = Entity(model=ha_model, color=color.lime, scale=ha_scale, parent=forearm, position=ha_pos)
+# 2. Віддаляємо камеру, щоб охопити всі 3 об'єкти
+camera.position = (0, 0, -20)
 
 EditorCamera()
-Grid(color=color.gray, size=10)
+Entity(model=Grid(30, 30), color=color.gray)
+
+Text(text="Клікни на 3D-вікно! Q/A - Shoulder | W/S - Forearm | E/D - Hand", position=(-0.85, 0.45), scale=1.2)
 
 def update():
+    # Автоматичне постійне обертання для перевірки рендеру
+    shoulder.rotation_y += 0.5
+    forearm.rotation_y += 0.5
+    hand.rotation_y += 0.5
+
+    # Додаткове керування з клавіатури (натисни мишкою на 3D-вікно перед цим)
+    if held_keys['q']: shoulder.rotation_z += 2
+    if held_keys['a']: shoulder.rotation_z -= 2
+    
+    if held_keys['w']: forearm.rotation_z += 2
+    if held_keys['s']: forearm.rotation_z -= 2
+    
+    if held_keys['e']: hand.rotation_z += 2
+    if held_keys['d']: hand.rotation_z -= 2
+
+    # Читання даних з ESP32
     if ser and ser.is_open and ser.in_waiting:
         try:
             raw_line = ser.readline().decode('utf-8').strip()
