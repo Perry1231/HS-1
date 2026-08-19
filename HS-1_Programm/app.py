@@ -15,51 +15,47 @@ except Exception as e:
 
 app = Ursina(title="HS-1 Kinematic Suit - Realtime Visualizer")
 
-def get_model(path):
+# Освітлення для об'ємного рендеру 3D-деталей
+DirectionalLight(color=color.white, y=2, z=-3)
+AmbientLight(color=color.rgba(120, 120, 120, 0.6))
+
+def load_part(path, color_val):
     if os.path.exists(path):
-        return path
+        return Entity(model=path, color=color_val, scale=0.001)
     else:
-        return 'cube'
+        return Entity(model='cube', color=color_val, scale=(0.2, 0.8, 0.2))
 
-sh_model = get_model('Models/shoulder.obj')
-fo_model = get_model('Models/forearm.obj')
-ha_model = get_model('Models/hand.obj')
+# 1. Завантаження деталей
+shoulder = load_part('Models/shoulder.obj', color.azure)
+forearm = load_part('Models/forearm.obj', color.orange)
+hand = load_part('Models/hand.obj', color.lime)
 
-# Масштабування деталей з мм у м
-sh_scale = 0.001 if sh_model != 'cube' else (0.3, 1.2, 0.3)
-fo_scale = 0.001 if fo_model != 'cube' else (0.8, 0.9, 0.8)
-ha_scale = 0.001 if ha_model != 'cube' else (0.8, 0.5, 0.8)
+# 2. Налаштування кінематичного зв'язку (Плече -> Передпліччя -> Кисть)
+shoulder.position = (0, 0, 0)
 
-# 1. Розносимо об'єкти на 3 метри один від одного по осі X
-shoulder = Entity(model=sh_model, color=color.azure, scale=sh_scale, position=(-3.0, 0, 0))
-forearm = Entity(model=fo_model, color=color.orange, scale=fo_scale, position=(0, 0, 0))
-hand = Entity(model=ha_model, color=color.lime, scale=ha_scale, position=(3.0, 0, 0))
+# Прив'язуємо передпліччя до плеча та зсуваємо його в точку суглоба (ліктя)
+forearm.parent = shoulder
+forearm.position = (0, -0.28, 0)  # Відстань 28 см вниз від плеча (відкоригуйте під свій розмір)
 
-# 2. Віддаляємо камеру, щоб охопити всі 3 об'єкти
-camera.position = (0, 0, -20)
+# Прив'язуємо кисть до передпліччя та зсуваємо в точку зап'ястя
+hand.parent = forearm
+hand.position = (0, -0.24, 0)     # Відстань 24 см вниз від ліктя
 
 EditorCamera()
-Entity(model=Grid(30, 30), color=color.gray)
+Entity(model=Grid(20, 20), color=color.gray)
 
-Text(text="Клікни на 3D-вікно! Q/A - Shoulder | W/S - Forearm | E/D - Hand", position=(-0.85, 0.45), scale=1.2)
+Text(text="Затисніть: [1] - Плече | [2] - Лікоть | [3] - Кисть", position=(-0.85, 0.45), scale=1.1)
 
 def update():
-    # Автоматичне постійне обертання для перевірки рендеру
-    shoulder.rotation_y += 0.5
-    forearm.rotation_y += 0.5
-    hand.rotation_y += 0.5
+    # Почергова перевірка обертання з клавіатури
+    if held_keys['1']:
+        shoulder.rotation_z += 1  # Повертає ВСЮ руку (плече, передпліччя і кисть)
+    if held_keys['2']:
+        forearm.rotation_z += 1   # Повертає тільки передпліччя та кисть
+    if held_keys['3']:
+        hand.rotation_z += 1      # Повертає тільки кисть
 
-    # Додаткове керування з клавіатури (натисни мишкою на 3D-вікно перед цим)
-    if held_keys['q']: shoulder.rotation_z += 2
-    if held_keys['a']: shoulder.rotation_z -= 2
-    
-    if held_keys['w']: forearm.rotation_z += 2
-    if held_keys['s']: forearm.rotation_z -= 2
-    
-    if held_keys['e']: hand.rotation_z += 2
-    if held_keys['d']: hand.rotation_z -= 2
-
-    # Читання даних з ESP32
+    # Прийом даних з ESP32 костюма HS-1
     if ser and ser.is_open and ser.in_waiting:
         try:
             raw_line = ser.readline().decode('utf-8').strip()
