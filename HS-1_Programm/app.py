@@ -1,54 +1,49 @@
-from ursina import *
-import serial
 import json
+import serial
+from ursina import *
 
-# ⚠️ Вкажи свій COM-порт від Плеча (подивись у PlatformIO, наприклад 'COM3' або 'COM4')
-PORT = 'COM4'
-BAUD = 115200
+# COM port configuration (change the port to match your ESP32)SERIAL_PORT = 'COM4'
+BAUD_RATE = 115200
 
-# Підключення до USB-порту
 try:
-    ser = serial.Serial(PORT, BAUD, timeout=0.01)
-    print(f"✅ УСПІШНО ПІДКТЮЧЕНО ДО КОСТЮМА НА {PORT}")
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.01)
+    print(f"[OK] Порт {SERIAL_PORT} успішно відкрито")
 except Exception as e:
-    print(f"⚠️ COM-порт не підключено або зайнятий: {e}")
+    print(f"[УВАГА] Не вдалося відкрити порт {SERIAL_PORT}: {e}")
     ser = None
 
-# Створення 3D-вікна
-app = Ursina(title="Kinematic Suit — 3D Arm Visualizer", borderless=False)
+app = Ursina(title="HS-1 Kinematic Suit - Realtime Visualizer")
 
-# --- 3D СЕГМЕНТИ РУКИ (З'єднані в каскад) ---
-# 1. Плече (батьківський об'єкт)
-shoulder = Entity(model='cube', color=color.azure, scale=(0.3, 1.2, 0.3), position=(0, 0, 0))
+# Loading 3D models
+# scale=0.001 converts millimeters from Fusion 360 to meters for Ursina
+# Завантаження 3D-моделей з підпапки Models
+# scale=0.001 переводить міліметри з Fusion 360 у метри для Ursina
+shoulder = Entity(model='Models/shoulder.obj', color=color.azure, scale=0.001, position=(0, 0, 0))
+forearm = Entity(model='Models/forearm.obj', color=color.orange, scale=1, parent=shoulder, position=(0, -0.28, 0))
+hand = Entity(model='Models/hand.obj', color=color.lime, scale=1, parent=forearm, position=(0, -0.24, 0))
 
-# 2. Передпліччя (прикріплене до низу плеча)
-forearm = Entity(model='cube', color=color.orange, scale=(0.8, 0.9, 0.8), parent=shoulder, position=(0, -1.1, 0))
-
-# 3. Кисть (прикріплена до низу передпліччя)
-hand = Entity(model='cube', color=color.lime, scale=(0.8, 0.5, 0.8), parent=forearm, position=(0, -0.9, 0))
-
-# Камера та координатна сітка
 EditorCamera()
 Grid(color=color.gray, size=10)
 
 def update():
     if ser and ser.is_open and ser.in_waiting:
         try:
-            line = ser.readline().decode('utf-8').strip()
-            if line.startswith('{') and line.endswith('}'):
-                data = json.loads(line)
+            raw_line = ser.readline().decode('utf-8').strip()
+            if raw_line.startswith('{') and raw_line.endswith('}'):
+                data = json.loads(raw_line)
                 
-                # Оновлення кутів плеча (Pitch, Yaw, Roll)
-                sh = data.get('shoulder', {})
-                shoulder.rotation = (sh.get('p', 0), sh.get('y', 0), -sh.get('r', 0))
+                #Pitch, Yaw, Roll
+                if 'shoulder' in data:
+                    s = data['shoulder']
+                    shoulder.rotation = (s.get('p', 0), s.get('y', 0), -s.get('r', 0))
                 
-                # Оновлення кутів передпліччя
-                fa = data.get('forearm', {})
-                forearm.rotation = (fa.get('p', 0), fa.get('y', 0), -fa.get('r', 0))
-                
-                # Оновлення кутів кисті
-                hd = data.get('hand', {})
-                hand.rotation = (hd.get('p', 0), hd.get('y', 0), -hd.get('r', 0))
+                if 'forearm' in data:
+                    f = data['forearm']
+                    forearm.rotation = (f.get('p', 0), f.get('y', 0), -f.get('r', 0))
+                    
+                if 'hand' in data:
+                    h = data['hand']
+                    hand.rotation = (h.get('p', 0), h.get('y', 0), -h.get('r', 0))
         except Exception:
             pass
 
