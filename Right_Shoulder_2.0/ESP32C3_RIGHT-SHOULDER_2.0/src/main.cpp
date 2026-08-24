@@ -80,7 +80,7 @@ void loop() {
   char buf[80];
 
   Serial.println("╔══════════════════════════════════════════════════════════════════════════╗");
-  Serial.println("║                       KINEMATIC SUIT — ARM HUD                           ║");
+  Serial.println("║                     KINEMATIC SUIT — ARM HUD                             ║");
   Serial.println("╠══════════════╦═══════════════════════╦═══════════════════════╦══════════════╣");
   Serial.println("║ ВУЗОЛ        ║ YAW (Курс)            ║ PITCH (Тангаж)        ║ КАЛІБРУВАННЯ ║");
   Serial.println("╠══════════════╬═══════════════════════╬═══════════════════════╬══════════════╣");
@@ -114,5 +114,13 @@ void loop() {
 
   Serial.println("╚══════════════╩═══════════════════════╩═══════════════════════╩══════════════╝");
 
-  delay(60); // ~15-20 FPS (ідеально для читання оком)
+  // -----------------------------------------------------------------------------------
+  // 4. ВІДПРАВКА ОДНОРЯДКОВОГО JSON ДЛЯ PYTHON УРСІНИ
+  // -----------------------------------------------------------------------------------
+  Serial.printf("{\"shoulder\":{\"p\":%.1f,\"y\":%.1f,\"r\":%.1f},\"forearm\":{\"p\":%.1f,\"y\":%.1f,\"r\":%.1f},\"hand\":{\"p\":%.1f,\"y\":%.1f,\"r\":%.1f}}\n",
+                fullArm.shoulder.pitch, fullArm.shoulder.yaw, fullArm.shoulder.roll,
+                fullArm.forearm.pitch, fullArm.forearm.yaw, fullArm.forearm.roll,
+                fullArm.hand.pitch, fullArm.hand.yaw, fullArm.hand.roll);
+
+  delay(60); // ~15-20 FPS
 }
