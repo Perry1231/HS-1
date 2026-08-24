@@ -1,112 +1,98 @@
 import json
 import os
-import shutil
 import serial
-import trimesh
+import threading
 from ursina import *
 
 # -------------------------------------------------------------
-# 1. MESH RE-CENTERING & VERTICAL ALIGNMENT (TRIMESH)
+# 1. SERIAL CONFIG & THREADING (NON-BLOCKING)
 # -------------------------------------------------------------
-MODELS = ['Models/shoulder.obj', 'Models/forearm.obj', 'Models/hand.obj']
-EXISTING_MODELS = [m for m in MODELS if os.path.exists(m)]
-
-VERTICAL_OFFSET = -1.2  
-
-if EXISTING_MODELS:
-    try:
-        if os.path.exists('models_compressed'):
-            shutil.rmtree('models_compressed')
-            
-        meshes = [trimesh.load(m, force='mesh') for m in EXISTING_MODELS]
-        combined = trimesh.util.concatenate(meshes)
-        center = combined.bounds.mean(axis=0)
-        
-        if sum(abs(center)) > 0.1:
-            print(f"[INFO] Recentering mesh geometry from {center} to origin...")
-            for path, mesh in zip(EXISTING_MODELS, meshes):
-                mesh.vertices -= center
-                mesh.export(path)
-            print("[OK] All 3D models centered successfully on disk!")
-    except Exception as e:
-        print(f"[WARNING] Could not recenter via trimesh: {e}")
-
-# -------------------------------------------------------------
-# 2. SERIAL PORT CONFIGURATION
-# -------------------------------------------------------------
-SERIAL_PORT = 'COM4'
+SERIAL_PORT = 'COM3'
 BAUD_RATE = 115200
 
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.05)
-    print(f"[OK] Connected to serial port {SERIAL_PORT}")
-except Exception as e:
-    print(f"[INFO] Serial port not connected ({e}). Running in test mode.")
-    ser = None
+# Глобальний словник для збереження останніх кутів з ESP32
+latest_data = {
+    'shoulder': {'p': 0.0, 'y': 0.0, 'r': 0.0},
+    'forearm':  {'p': 0.0, 'y': 0.0, 'r': 0.0},
+    'hand':     {'p': 0.0, 'y': 0.0, 'r': 0.0}
+}
+
+def serial_reader_thread():
+    global latest_data
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
+        print(f"[OK] Serial thread started on {SERIAL_PORT}")
+        while True:
+            if ser.is_open and ser.in_waiting:
+                line = ser.readline().decode('utf-8', errors='ignore').strip()
+                if line.startswith('{') and line.endswith('}'):
+                    try:
+                        parsed = json.loads(line)
+                        for key in ['shoulder', 'forearm', 'hand']:
+                            if key in parsed:
+                                latest_data[key] = parsed[key]
+                        print(f"[RECV] {parsed}")
+                    except json.JSONDecodeError:
+                        pass
+    except Exception as e:
+        print(f"[INFO] Serial disconnected: {e}. Running manual test mode.")
+
+# Запуск зчитування з COM-порту в фоновому потоці
+t = threading.Thread(target=serial_reader_thread, daemon=True)
+t.start()
 
 # -------------------------------------------------------------
-# 3. URSINA INITIALIZATION & SCENE SETUP
+# 2. URSINA SCENE SETUP
 # -------------------------------------------------------------
-app = Ursina(title="HS-1 Kinematic Suit - Realtime Visualizer")
+app = Ursina(title="HS-1 Kinematic Visualizer")
 
 DirectionalLight(color=color.white, y=2, z=-3)
 AmbientLight(color=color.rgba(140, 140, 140, 0.7))
 
-# Parent container
-arm_root = Entity(position=(0, VERTICAL_OFFSET, 0))
+# Батьківський вузол
+arm_root = Entity(position=(0, -0.5, 0))
 
-# 3D Parts (Parenting chain preserves relative joints correctly)
-shoulder = Entity(model='Models/shoulder.obj', color=color.azure, scale=0.001, parent=arm_root)
-forearm = Entity(model='Models/forearm.obj', color=color.orange, scale=0.001, parent=arm_root)
-hand = Entity(model='Models/hand.obj', color=color.lime, scale=0.001, parent=arm_root)
+def load_cad_part(path, color_val):
+    if os.path.exists(path):
+        return Entity(model=path, color=color_val, scale=0.001, parent=arm_root)
+    else:
+        return Entity(model='cube', color=color_val, scale=(0.1, 0.4, 0.1), parent=arm_root)
 
-# -------------------------------------------------------------
-# 4. CAMERA & ENVIRONMENT
-# -------------------------------------------------------------
+# Завантажуємо всі 3 частини в один контейнер arm_root
+shoulder = load_cad_part('Models/shoulder.obj', color.azure)
+forearm  = load_cad_part('Models/forearm.obj', color.orange)
+hand     = load_cad_part('Models/hand.obj', color.lime)
+
 EditorCamera()
-Entity(model=Grid(20, 20), color=color.gray)
+Entity(model=Grid(30, 30), color=color.gray)
 
-Text(text="[1] Shoulder | [2] Elbow | [3] Hand | Up/Down Arrows - Adjust Height", 
-     position=(-0.85, 0.45), scale=1.0)
+Text(text="[1/2/3] Manual Test | WASD - Camera | Realtime UART active", position=(-0.85, 0.45), scale=1.0)
 
 # -------------------------------------------------------------
-# 5. MAIN UPDATE LOOP
+# 3. UPDATE LOOP
 # -------------------------------------------------------------
 def update():
-    # Real-time height adjustment
-    if held_keys['down arrow']: arm_root.y -= 0.8 * time.dt
-    if held_keys['up arrow']:   arm_root.y += 0.8 * time.dt
+    # 1. Ручна перевірка клавішами
+    if held_keys['1']: shoulder.rotation_x += 2
+    if held_keys['2']: forearm.rotation_x += 2
+    if held_keys['3']: hand.rotation_x += 2
 
-    # Test joint rotation keys
-    if held_keys['1']: shoulder.rotation_z += 1
-    if held_keys['2']: forearm.rotation_z += 1
-    if held_keys['3']: hand.rotation_z += 1
+    # 2. Застосування кутів з фонового потоку Serial
+    s = latest_data['shoulder']
+    f = latest_data['forearm']
+    h = latest_data['hand']
 
-    # Read latest serial JSON frame (skips ANSI HUD tables automatically)
-    if ser and ser.is_open and ser.in_waiting:
-        try:
-            # Read until the latest available line to avoid lag
-            lines = ser.readlines()
-            for raw_bytes in reversed(lines):
-                raw_line = raw_bytes.decode('utf-8', errors='ignore').strip()
-                if raw_line.startswith('{') and raw_line.endswith('}'):
-                    data = json.loads(raw_line)
-                    
-                    if 'shoulder' in data:
-                        s = data['shoulder']
-                        shoulder.rotation = (s.get('p', 0), s.get('y', 0), -s.get('r', 0))
-                    
-                    if 'forearm' in data:
-                        f = data['forearm']
-                        forearm.rotation = (f.get('p', 0), f.get('y', 0), -f.get('r', 0))
-                        
-                    if 'hand' in data:
-                        h = data['hand']
-                        hand.rotation = (h.get('p', 0), h.get('y', 0), -h.get('r', 0))
-                    
-                    # Stop parsing once the newest valid JSON frame is processed
-                    break
-        except Exception:
-            pass
+    # Явне оновлення кутів через окремі деталі
+    shoulder.rotation_x = s.get('p', 0)
+    shoulder.rotation_y = s.get('y', 0)
+    shoulder.rotation_z = -s.get('r', 0)
+
+    forearm.rotation_x = f.get('p', 0)
+    forearm.rotation_y = f.get('y', 0)
+    forearm.rotation_z = -f.get('r', 0)
+
+    hand.rotation_x = h.get('p', 0)
+    hand.rotation_y = h.get('y', 0)
+    hand.rotation_z = -h.get('r', 0)
 
 app.run()
