@@ -177,6 +177,10 @@ python app.py
 ```
 
 ---
+## Documentation
+
+Download here ---> [Download HS-1 Documentation](./https://github.com/Perry1231/HS-1/blob/main/HS-1%20Short_Documentation.txt)
+---
 
 ## 👤 Author
 
