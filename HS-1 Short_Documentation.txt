@@ -1,0 +1,343 @@
+
+```markdown
+# 🦾 HS-1 Kinematic Suit — Comprehensive Technical Documentation
+
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--C3-orange.svg)
+![Python](https://img.shields.io/badge/Python-3.11-green.svg)
+![Framework](https://img.shields.io/badge/Visualizer-Ursina%20Engine-purple.svg)
+
+The **HS-1 Kinematic Suit** is an open-source hardware-software complex designed for full spatial posture capture and real-time 3D rendering of the human upper limb. The system tracks orientation across three degrees of freedom (3-DoF per segment, 9-DoF combined) using a distributed network of **ESP32-C3 SuperMini** microcontrollers integrated with **Bosch BNO055** absolute orientation sensors.
+
+---
+
+## 📋 Table of Contents
+
+1. [System Architecture](#-system-architecture)
+2. [Hardware Circuitry & Pinouts](#-hardware-circuitry--pinouts)
+3. [Kinematic & Orientation Vector Pipeline](#-kinematic--orientation-vector-pipeline)
+4. [Firmware Specification (C++)](#-firmware-specification-c)
+5. [Serial Protocol & JSON Data Stream](#-serial-protocol--json-data-stream)
+6. [Python 3D Engine Implementation](#-python-3d-engine-implementation)
+7. [Quick Start & CLI Installation](#-quick-start--cli-installation)
+8. [Comprehensive Troubleshooting Guide](#-comprehensive-troubleshooting-guide)
+9. [Project Directory Structure](#-project-directory-structure)
+10. [Author & License](#-author--license)
+
+---
+
+## 🛠 System Architecture
+
+The HS-1 system relies on a **cascaded event-driven bus architecture** over hardware UART. Rather than multiplexing I2C sensors over long cables to a single central processor (which introduces high bus capacitance and crosstalk), each segment computes its own spatial orientation onboard via an independent ESP32-C3 MCU and passes data sequentially down the arm.
+
+
+```
+
+┌──────────────────────────┐
+│      HAND NODE (#1)      │  [BNO055] --I2C--> [ESP32-C3]
+└────────────┬─────────────┘
+│ UART TX (14 bytes @ 50Hz)
+▼
+┌──────────────────────────┐
+│    FOREARM NODE (#2)     │  [BNO055] --I2C--> [ESP32-C3] (Pass-through + Append)
+└────────────┬─────────────┘
+│ UART TX (28 bytes @ 50Hz)
+▼
+┌──────────────────────────┐
+│    SHOULDER NODE (#3)    │  [BNO055] --I2C--> [ESP32-C3] (Master Aggregator)
+└────────────┬─────────────┘
+│ USB CDC / Serial (JSON Stream)
+▼
+┌──────────────────────────┐
+│     PC VISUALIZER        │  Python 3.11 + Ursina Engine (Non-blocking GUI)
+└──────────────────────────┘
+
+```
+
+---
+
+## 🔌 Hardware Circuitry & Pinouts
+
+### 1. Master Inter-Node Bus Topology
+
+| Connection | Origin Node | Origin Pin | Target Node | Target Pin | Protocol |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Cascade Link 1** | Hand Node | `GPIO 4` (TX) | Forearm Node | `GPIO 1` (RX) | UART (115200 8N1) |
+| **Cascade Link 2** | Forearm Node | `GPIO 4` (TX) | Shoulder Node | `GPIO 1` (RX) | UART (115200 8N1) |
+| **Host Link** | Shoulder Node | USB CDC | Host PC | USB Port (`COMx`) | Virtual COM Port |
+| **Common Ground** | All Nodes | `GND` | All Nodes | `GND` | Unified Reference |
+
+> ⚠️ **CRITICAL GROUNDING NOTE:** Ground potential drift will distort UART line levels. A continuous Ground (GND) wire **must** run along the entire harness parallel to the data lines.
+
+### 2. Intra-Node Sensor Wiring (ESP32-C3 SuperMini to Bosch BNO055)
+
+Every segment node features an identical sensor interface:
+
+| ESP32-C3 Pin | BNO055 Pin | Signal Description |
+| :--- | :--- | :--- |
+| `3.3V` | `VIN` / `3.3V` | Node Logic Power |
+| `GND` | `GND` | Power & Logic Reference Ground |
+| `GPIO 3` | `SDA` | I2C Data Line (100 kHz) |
+| `GPIO 2` | `SCL` | I2C Clock Line (100 kHz) |
+| `GND` | `PS0` / `PS1` | Protocol Select (Set to Low for I2C Mode) |
+| *Unconnected* | `ADR` | Default I2C Address `0x28` |
+
+---
+
+## 📐 Kinematic & Orientation Vector Pipeline
+
+Each BNO055 sensor executes fused sensor readings onboard via its internal 32-bit ARM Cortex-M0 MCU running Bosch BSX3.0 Fusion Software (NDOF Mode).
+
+
+```
+
+[3-Axis Accelerometer] 
+
+[3-Axis Gyroscope]     ──> [Bosch BSX3.0 Kalman Fusion] ──> Absolute Euler Angles (Yaw, Pitch, Roll)
+[3-Axis Magnetometer]  /
+
+```
+
+### Spatial Euler Angle Conversions
+Angles are formatted in decimal degrees prior to packing:
+* **Yaw ($Y$):** Heading rotation around Z-axis ($0.0^\circ \rightarrow 360.0^\circ$).
+* **Pitch ($P$):** Elevation rotation around Y-axis ($-180.0^\circ \rightarrow +180.0^\circ$).
+* **Roll ($R$):** Bank rotation around X-axis ($-90.0^\circ \rightarrow +90.0^\circ$).
+
+---
+
+## 💻 Firmware Specification (C++)
+
+The firmware is written using **PlatformIO** and **Arduino Core for ESP32**.
+
+### Shared Memory Buffer (`ArmPackets.h`)
+```cpp
+#ifndef ARM_PACKETS_H
+#define ARM_PACKETS_H
+
+#include <Arduino.h>
+
+#pragma pack(push, 1)
+struct SensorData {
+    float yaw;        // Heading (deg)
+    float pitch;      // Pitch (deg)
+    float roll;       // Roll (deg)
+    uint8_t calibSys; // System Calibration Status (0-3)
+    uint8_t calibGyro;// Gyro Calibration Status (0-3)
+};
+
+struct FullArmPacket {
+    SensorData hand;
+    SensorData forearm;
+    SensorData shoulder;
+};
+#pragma pack(pop)
+
+#endif
+
+```
+
+---
+
+## 📡 Serial Protocol & JSON Data Stream
+
+The Shoulder Node parses all segment structs and emits a single-line JSON string at **50 Hz** over USB Serial.
+
+### Sample Frame Output
+
+```json
+{"shoulder":{"p":12.7,"y":223.9,"r":178.4},"forearm":{"p":45.2,"y":190.1,"r":12.0},"hand":{"p":5.1,"y":188.4,"r":2.3}}
+
+```
+
+### Frame Schema Definition
+
+```json
+{
+  "$schema": "[http://json-schema.org/draft-07/schema#](http://json-schema.org/draft-07/schema#)",
+  "type": "object",
+  "properties": {
+    "shoulder": { "$ref": "#/definitions/EulerAngles" },
+    "forearm":  { "$ref": "#/definitions/EulerAngles" },
+    "hand":     { "$ref": "#/definitions/EulerAngles" }
+  },
+  "required": ["shoulder", "forearm", "hand"],
+  "definitions": {
+    "EulerAngles": {
+      "type": "object",
+      "properties": {
+        "p": { "type": "number", "minimum": -180.0, "maximum": 180.0 },
+        "y": { "type": "number", "minimum": 0.0, "maximum": 360.0 },
+        "r": { "type": "number", "minimum": -180.0, "maximum": 180.0 }
+      },
+      "required": ["p", "y", "r"]
+    }
+  }
+}
+
+```
+
+---
+
+## 🐍 Python 3D Engine Implementation
+
+The visualization desktop client (`app.py`) isolates Serial read operations from the 3D rendering thread to preserve a steady 60 FPS viewport performance.
+
+```python
+import json
+import os
+import serial
+import threading
+from ursina import *
+
+SERIAL_PORT = 'COM4'
+BAUD_RATE = 115200
+
+latest_data = {
+    'shoulder': {'p': 0.0, 'y': 0.0, 'r': 0.0},
+    'forearm':  {'p': 0.0, 'y': 0.0, 'r': 0.0},
+    'hand':     {'p': 0.0, 'y': 0.0, 'r': 0.0}
+}
+
+def serial_reader_thread():
+    global latest_data
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.05)
+        print(f"[OK] Listening on {SERIAL_PORT}")
+        while True:
+            if ser.is_open and ser.in_waiting:
+                raw_line = ser.readline().decode('utf-8', errors='ignore').strip()
+                if raw_line.startswith('{') and raw_line.endswith('}'):
+                    try:
+                        parsed = json.loads(raw_line)
+                        for key in ['shoulder', 'forearm', 'hand']:
+                            if key in parsed:
+                                latest_data[key] = parsed[key]
+                    except json.JSONDecodeError:
+                        pass
+    except Exception as e:
+        print(f"[ERROR] Serial thread failed: {e}")
+
+threading.Thread(target=serial_reader_thread, daemon=True).start()
+
+app = Ursina(title="HS-1 Kinematic Visualizer")
+DirectionalLight(color=color.white, y=2, z=-3)
+AmbientLight(color=color.rgba(140, 140, 140, 0.7))
+
+arm_root = Entity(position=(0, -0.5, 0))
+
+def load_cad(path, c):
+    return Entity(model=path, color=c, scale=0.001, parent=arm_root) if os.path.exists(path) else Entity(model='cube', color=c, parent=arm_root)
+
+shoulder = load_cad('Models/shoulder.obj', color.azure)
+forearm  = load_cad('Models/forearm.obj', color.orange)
+hand     = load_cad('Models/hand.obj', color.lime)
+
+EditorCamera()
+Entity(model=Grid(30, 30), color=color.gray)
+
+def update():
+    s, f, h = latest_data['shoulder'], latest_data['forearm'], latest_data['hand']
+    shoulder.rotation = (s.get('p', 0), s.get('y', 0), -s.get('r', 0))
+    forearm.rotation  = (f.get('p', 0), f.get('y', 0), -f.get('r', 0))
+    hand.rotation     = (h.get('p', 0), h.get('y', 0), -h.get('r', 0))
+
+app.run()
+
+```
+
+---
+
+## 🚀 Quick Start & CLI Installation
+
+### 1. Repository Setup
+
+```bash
+# Option A: Clone repository
+git clone [https://github.com/Perry132/HS-1-Kinematic-Suit.git](https://github.com/Perry132/HS-1-Kinematic-Suit.git)
+cd HS-1-Kinematic-Suit
+
+# Option B: Download direct ZIP package
+curl -L -O [https://github.com/Perry132/HS-1-Kinematic-Suit/archive/refs/heads/main.zip](https://github.com/Perry132/HS-1-Kinematic-Suit/archive/refs/heads/main.zip)
+unzip main.zip
+cd HS-1-Kinematic-Suit-main
+
+```
+
+### 2. Microcontroller Deployment (PlatformIO CLI)
+
+```bash
+# Upload Hand node firmware
+platformio run --target upload --project-dir Firmware/hand
+
+# Upload Forearm node firmware
+platformio run --target upload --project-dir Firmware/forearm
+
+# Upload Shoulder hub node firmware
+platformio run --target upload --project-dir Firmware/shoulder
+
+```
+
+### 3. Python Virtual Environment Setup
+
+```bash
+# Create and activate environment
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# Install requirements
+pip install -r requirements.txt
+
+# Launch visualizer
+python app.py
+
+```
+
+---
+
+## 🛠 Comprehensive Troubleshooting Guide
+
+| Issue / Symptom | Probable Cause | Diagnostic Verification | Solution |
+| --- | --- | --- | --- |
+| `[ERROR] Could not open port COM4` | Port locked by IDE Monitor or wrong port index. | Open Device Manager (`Win + X` $\rightarrow$ Ports). | Close PlatformIO Serial Monitor; verify `SERIAL_PORT` string in `app.py`. |
+| Hand/Forearm values stuck at `0.0` | Broken UART link or RX/TX polarity swap. | Inspect Shoulder output in Python console. | Swap `TX` and `RX` jumpers between nodes; verify continuous `GND` line connection across nodes. |
+| Model mesh distortion / mesh overlapping | Center point offset during CAD export. | Check mesh origin in Blender/Fusion 360. | Export `.obj` components with shared global origin (0,0,0) without re-centering tools. |
+| High orientation latency (> 1 sec) | Unread serial queue accumulating in OS buffer. | Check CPU thread utilization. | Ensure non-blocking `readline()` execution inside Python `threading.Thread`. |
+| BNO055 Init Failure | Incorrect I2C address or unpowered sensor. | Scan I2C bus using test sketch. | Set `PS0` and `PS1` pins to `GND`; verify `3.3V` rail voltage across BNO055 pins. |
+
+---
+
+## 📁 Project Directory Structure
+
+```
+HS-1-Kinematic-Suit/
+├── app.py                     # Python 3D Visualizer Application
+├── requirements.txt           # Python Package Manifest
+├── README.md                  # Comprehensive Documentation
+├── Models/                    # 3D Mesh Assets
+│   ├── shoulder.obj           # Shoulder Joint CAD Mesh
+│   ├── forearm.obj            # Forearm Joint CAD Mesh
+│   └── hand.obj               # Hand Joint CAD Mesh
+└── Firmware/                  # C++ Embedded Sources (PlatformIO)
+    ├── include/
+    │   └── ArmPackets.h       # Shared Binary Struct Definitions
+    ├── hand/                  # Hand Segment Controller Project
+    ├── forearm/               # Forearm Segment Controller Project
+    └── shoulder/              # Shoulder Master Hub Project
+
+```
+
+---
+
+## 👤 Author & License
+
+**Vladyslav Vytrykush**
+
+* GitHub: [@Perry132](https://www.google.com/search?q=https://github.com/Perry132)
+* Specialty: Electronics & Computer Engineering, Lviv Polytechnic National University
+
+This project is open-source software licensed under the **MIT License**.
+
+```
+
+```
