@@ -1,0 +1,23 @@
+Test view in command line
+
+```markdown
+### 📡 Serial Data Output Format
+
+The Shoulder module aggregates data from the entire HS-1 cascade chain via UART and outputs a structured JSON stream through USB Serial (`115200` baud rate) for real-time Python/Ursina visualization:
+
+```json
+{"shoulder":{"p":12.4,"y":102.1,"r":178.5},"forearm":{"p":-5.1,"y":88.3,"r":12.2},"hand":{"p":-2.6,"y":282.9,"r":177.5}}
+
+```
+
+#### **JSON Structure Breakdown:**
+
+| Joint Key | Parameters | Description |
+| --- | --- | --- |
+| `shoulder` | `p` (Pitch), `y` (Yaw), `r` (Roll) | Orientation angles from Upper Arm BNO055 |
+| `forearm` | `p` (Pitch), `y` (Yaw), `r` (Roll) | Orientation angles forwarded from Forearm BNO055 |
+| `hand` | `p` (Pitch), `y` (Yaw), `r` (Roll) | Orientation angles passed through from Wrist BNO055 |
+
+> **Note:** All angles are reported in degrees ($-180.0^\circ$ to $+180.0^\circ$ / $0.0^\circ$ to $360.0^\circ$). The update rate of the cascade stream is synchronized to **~50 Hz (20 ms loop interval)**.
+
+```
