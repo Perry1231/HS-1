@@ -1,5 +1,5 @@
 # HS-1
-Here is the complete, professional `README.md` fully translated into English for your GitHub repository:
+
 
 ```markdown
 # 🦾 HS-1 Kinematic Suit — Real-Time Motion Tracking System
