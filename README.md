@@ -4,10 +4,12 @@
 
 # 🦾 HS-1 Kinematic Suit — Real-Time Motion Tracking System
 
-![License](https://img.shields.io/badge/License-MIT-blue.svg)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--C3-orange.svg)
 ![Python](https://img.shields.io/badge/Python-3.11-green.svg)
+[![C++](https://img.shields.io/badge/C%2B%2B-00599C?style=flat&logo=cplusplus&logoColor=white)](https://isocpp.org/)
 ![Framework](https://img.shields.io/badge/Visualizer-Ursina%20Engine-purple.svg)
+[![Fusion 360](https://img.shields.io/badge/Fusion_360-Autodesk-06B6D4.svg?style=flat&logo=autodesk&logoColor=white)](https://www.autodesk.com/products/fusion-360)
 
 **HS-1 Kinematic Suit** is a hardware-software system designed for real-time spatial orientation tracking of the human upper limb with continuous 3D rendering. The system utilizes a cascaded hardware architecture of **ESP32-C3 SuperMini** microcontrollers paired with high-precision **Bosch BNO055** 9-axis IMU sensors.
 
