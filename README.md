@@ -1,7 +1,7 @@
 # HS-1
 
 
-```markdown
+
 # 🦾 HS-1 Kinematic Suit — Real-Time Motion Tracking System
 
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
