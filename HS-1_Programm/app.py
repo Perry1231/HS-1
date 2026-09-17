@@ -1,98 +1,75 @@
-import json
-import os
-import serial
-import threading
 from ursina import *
+import serial
+import json
 
-# -------------------------------------------------------------
-# 1. SERIAL CONFIG & THREADING (NON-BLOCKING)
-# -------------------------------------------------------------
-SERIAL_PORT = 'COM3'
-BAUD_RATE = 115200
+app = Ursina()
 
-# Глобальний словник для збереження останніх кутів з ESP32
-latest_data = {
-    'shoulder': {'p': 0.0, 'y': 0.0, 'r': 0.0},
-    'forearm':  {'p': 0.0, 'y': 0.0, 'r': 0.0},
-    'hand':     {'p': 0.0, 'y': 0.0, 'r': 0.0}
-}
+# Створення координатної сітки (щоб бачити, де центр світу)
+Entity(model='grid', scale=50, color=color.gray)
 
-def serial_reader_thread():
-    global latest_data
-    try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
-        print(f"[OK] Serial thread started on {SERIAL_PORT}")
-        while True:
-            if ser.is_open and ser.in_waiting:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if line.startswith('{') and line.endswith('}'):
-                    try:
-                        parsed = json.loads(line)
-                        for key in ['shoulder', 'forearm', 'hand']:
-                            if key in parsed:
-                                latest_data[key] = parsed[key]
-                        print(f"[RECV] {parsed}")
-                    except json.JSONDecodeError:
-                        pass
-    except Exception as e:
-        print(f"[INFO] Serial disconnected: {e}. Running manual test mode.")
+# --- 1. ПЛЕЧЕ (БІЦЕПС) ---
+shoulder_pivot = Entity(position=(0, 5, 0))
+shoulder_model = Entity(
+    parent=shoulder_pivot,
+    model='Models/Biceps_2_0.stl',
+    scale=1.0,                 # Збільшено масштаб під нормальне відображення
+    color=color.azure,          # Яскраво-блакитний
+    double_sided=True
+)
 
-# Запуск зчитування з COM-порту в фоновому потоці
-t = threading.Thread(target=serial_reader_thread, daemon=True)
-t.start()
+# --- 2. ПЕРЕДПЛІЧЧЯ ---
+# Z/Y зміщення підігнано під ліктьовий суглоб
+forearm_pivot = Entity(parent=shoulder_pivot, position=(0, -5, 0)) 
+forearm_model = Entity(
+    parent=forearm_pivot,
+    model='Models/Forearm_2_0.stl',
+    scale=1.0,
+    color=color.lime,           # Яскраво-зелений
+    double_sided=True
+)
 
-# -------------------------------------------------------------
-# 2. URSINA SCENE SETUP
-# -------------------------------------------------------------
-app = Ursina(title="HS-1 Kinematic Visualizer")
+# --- 3. КИСТЬ (ХЕНД) ---
+# Зміщення нижче по лінії передпліччя до зап'ястя
+hand_pivot = Entity(parent=forearm_pivot, position=(0, -5, 0))
+hand_model = Entity(
+    parent=hand_pivot,
+    model='Models/Hand_2_0.stl',
+    scale=1.0,
+    color=color.magenta,        # Рожевий/Маджента (щоб чітко бачити Кисть)
+    double_sided=True
+)
 
-DirectionalLight(color=color.white, y=2, z=-3)
-AmbientLight(color=color.rgba(140, 140, 140, 0.7))
+# --- КАМЕРА ТА ОСВІТЛЕННЯ ---
+cam = EditorCamera()
+cam.position = (0, 0, -30)      # Фокус камери точно на деталі
 
-# Батьківський вузол
-arm_root = Entity(position=(0, -0.5, 0))
+DirectionalLight(y=3, z=-5, rotation=(45, -45, 0))
+AmbientLight(color=color.rgba(150, 150, 150, 0.8))
 
-def load_cad_part(path, color_val):
-    if os.path.exists(path):
-        return Entity(model=path, color=color_val, scale=0.001, parent=arm_root)
-    else:
-        return Entity(model='cube', color=color_val, scale=(0.1, 0.4, 0.1), parent=arm_root)
+# --- ЗЧИТАННЯ SERIAL ---
+try:
+    ser = serial.Serial('COM3', 115200, timeout=0.05)
+except Exception as e:
+    print(f"Помилка відкриття COM-порту: {e}")
+    ser = None
 
-# Завантажуємо всі 3 частини в один контейнер arm_root
-shoulder = load_cad_part('Models/shoulder.obj', color.azure)
-forearm  = load_cad_part('Models/forearm.obj', color.orange)
-hand     = load_cad_part('Models/hand.obj', color.lime)
-
-EditorCamera()
-Entity(model=Grid(30, 30), color=color.gray)
-
-Text(text="[1/2/3] Manual Test | WASD - Camera | Realtime UART active", position=(-0.85, 0.45), scale=1.0)
-
-# -------------------------------------------------------------
-# 3. UPDATE LOOP
-# -------------------------------------------------------------
 def update():
-    # 1. Ручна перевірка клавішами
-    if held_keys['1']: shoulder.rotation_x += 2
-    if held_keys['2']: forearm.rotation_x += 2
-    if held_keys['3']: hand.rotation_x += 2
-
-    # 2. Застосування кутів з фонового потоку Serial
-    s = latest_data['shoulder']
-    f = latest_data['forearm']
-    h = latest_data['hand']
-
-    # Явне оновлення кутів через окремі деталі
-    shoulder.rotation_x = s.get('p', 0)
-    shoulder.rotation_y = s.get('y', 0)
-    shoulder.rotation_z = -s.get('r', 0)
-
-    forearm.rotation_x = f.get('p', 0)
-    forearm.rotation_y = f.get('y', 0)
-    forearm.rotation_z = -f.get('r', 0)
-
-    hand.rotation_x = h.get('p', 0)
-    hand.rotation_y = h.get('y', 0)
-    hand.rotation_z = -h.get('r', 0)
+    if ser and ser.in_waiting > 0:
+        try:
+            line = ser.readline().decode('utf-8').strip()
+            if line.startswith('{') and line.endswith('}'):
+                data = json.loads(line)
+                
+                if 'shoulder' in data:
+                    s = data['shoulder']
+                    shoulder_pivot.rotation = Vec3(s['p'], s['y'], s['r'])
+                if 'forearm' in data:
+                    f = data['forearm']
+                    forearm_pivot.rotation = Vec3(f['p'], f['y'], f['r'])
+                if 'hand' in data:
+                    h = data['hand']
+                    hand_pivot.rotation = Vec3(h['p'], h['y'], h['r'])
+        except Exception:
+            pass
 
 app.run()
