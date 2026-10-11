@@ -10,18 +10,19 @@ Entity(model='grid', scale=50, color=color.gray)
 # --- 2. HIERARCHY OF MODELS (BODY, ARMS AND LEGS) ---
 
 # Base center (Torso / Body)
-body_pivot = Entity(position=(0, 4, 0))
+body_pivot = Entity(position=(0, -150, 0))
 body_model = Entity(
     parent=body_pivot,
     model='Models/Body_2_0.stl',
     scale=1.0,
     color=color.orange,
     double_sided=True,
-    position=(0, 0, 0)
+    position=(-90, -190, -285),
+    rotation=(90, 0, 90)
 )
 
 # --- ARMS (Shoulder attached to the body) ---
-shoulder_pivot = Entity(parent=body_pivot, position=(0, 3, 0))
+shoulder_pivot = Entity(parent=body_pivot, position=(0, -150, -38))
 shoulder_model = Entity(
     parent=shoulder_pivot,
     model='Models/Biceps_2_0.stl',
@@ -63,7 +64,7 @@ leg_higher_model = Entity(
     scale=1.0,
     color=color.cyan,
     double_sided=True,
-    position=(0, -2.0, 0)
+    position=(0, -500.0, 0)
 )
 
 # 2. Lower Leg (Shin / Leg_Lower)
@@ -74,7 +75,7 @@ leg_lower_model = Entity(
     scale=1.0,
     color=color.brown,
     double_sided=True,
-    position=(0, -2.0, 0)
+    position=(0, -500.0, 0)
 )
 
 # 3. Foot (Leg_Foot)
@@ -85,7 +86,7 @@ leg_foot_model = Entity(
     scale=1.0,
     color=color.red,
     double_sided=True,
-    position=(0, -1.0, 0)
+    position=(0, -500.0, 0)
 )
 Entity(parent=leg_foot_pivot, model='sphere', scale=1, color=color.yellow)
 
