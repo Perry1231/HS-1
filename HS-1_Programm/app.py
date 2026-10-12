@@ -57,18 +57,21 @@ Entity(parent=hand_pivot, model='sphere', scale=1, color=color.yellow)
 # --- LEGS (Attached lower to the body) ---
 
 # 1. Upper Leg (Thigh / Leg_Higher)
-leg_higher_pivot = Entity(parent=body_pivot, position=(0, -3, 0))
-leg_higher_model = Entity(
-    parent=leg_higher_pivot,
+leg_higher_pivot_1 = Entity(parent=body_pivot, position=(0, -3, 0))
+leg_higher_model_1 = Entity(
+    parent=leg_higher_pivot_1,
     model='Models/Leg_Higher_2_0.stl',
     scale=1.0,
     color=color.cyan,
     double_sided=True,
-    position=(0, -500.0, 0)
+    position=(0, -910.0, -420),
+    rotation=(270, 180, 90)
 )
 
+
+
 # 2. Lower Leg (Shin / Leg_Lower)
-leg_lower_pivot = Entity(parent=leg_higher_pivot, position=(0, -4.0, 0))
+leg_lower_pivot = Entity(parent=leg_higher_pivot_1, position=(0, -4.0, 0))
 leg_lower_model = Entity(
     parent=leg_lower_pivot,
     model='Models/Leg_Lower_2_0.stl',
@@ -136,7 +139,7 @@ def update():
                     hand_pivot.rotation = Vec3(h['p'], h['y'], h['r'])
                 if 'leg_higher' in data:
                     lh = data['leg_higher']
-                    leg_higher_pivot.rotation = Vec3(lh['p'], lh['y'], lh['r'])
+                    leg_higher_pivot_1.rotation = Vec3(lh['p'], lh['y'], lh['r'])
                 if 'leg_lower' in data:
                     ll = data['leg_lower']
                     leg_lower_pivot.rotation = Vec3(ll['p'], ll['y'], ll['r'])
@@ -182,9 +185,9 @@ def update():
 
     # --- LEGS (Keyboard Controls) ---
     # Thigh (Leg_Higher): R / F keys
-    if held_keys['r']: leg_higher_pivot.rotation_x += rotation_speed
-    if held_keys['f']: leg_higher_pivot.rotation_x -= rotation_speed
-    
+    if held_keys['r']: leg_higher_pivot_1.rotation_x += rotation_speed
+    if held_keys['f']: leg_higher_pivot_1.rotation_x -= rotation_speed
+
     # Shin (Leg_Lower): 1 / 2 keys
     if held_keys['1']: leg_lower_pivot.rotation_x += rotation_speed
     if held_keys['2']: leg_lower_pivot.rotation_x -= rotation_speed
@@ -201,7 +204,7 @@ def input(key):
         shoulder_pivot.rotation = (0, 0, 0)
         forearm_pivot.rotation = (0, 0, 0)
         hand_pivot.rotation = (0, 0, 0)
-        leg_higher_pivot.rotation = (0, 0, 0)
+        leg_higher_pivot_1.rotation = (0, 0, 0)
         leg_lower_pivot.rotation = (0, 0, 0)
         leg_foot_pivot.rotation = (0, 0, 0)
         
