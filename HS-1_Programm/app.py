@@ -71,27 +71,29 @@ leg_higher_model_1 = Entity(
 
 
 # 2. Lower Leg (Shin / Leg_Lower)
-leg_lower_pivot = Entity(parent=leg_higher_pivot_1, position=(0, -4.0, 0))
-leg_lower_model = Entity(
-    parent=leg_lower_pivot,
+leg_lower_pivot_1 = Entity(parent=leg_higher_pivot_1, position=(0, -4.0, 0))
+leg_lower_model_1 = Entity(
+    parent=leg_lower_pivot_1,
     model='Models/Leg_Lower_2_0.stl',
     scale=1.0,
     color=color.brown,
     double_sided=True,
-    position=(0, -500.0, 0)
+    position=(0, -1350.0, -420),
+    rotation=(270, 180, 90)
 )
 
 # 3. Foot (Leg_Foot)
-leg_foot_pivot = Entity(parent=leg_lower_pivot, position=(0, -4.0, 0))
-leg_foot_model = Entity(
-    parent=leg_foot_pivot,
+leg_foot_pivot_1 = Entity(parent=leg_lower_pivot_1, position=(0, -4.0, 0))
+leg_foot_model_1 = Entity(
+    parent=leg_foot_pivot_1,
     model='Models/Leg_Foot_2_0.stl',
     scale=1.0,
     color=color.red,
     double_sided=True,
-    position=(0, -500.0, 0)
+    position=(-200, -1480.0, -440),
+    rotation=(180, 90, 180)
 )
-Entity(parent=leg_foot_pivot, model='sphere', scale=1, color=color.yellow)
+Entity(parent=leg_foot_pivot_1, model='sphere', scale=1, color=color.yellow)
 
 
 # --- 3. CAMERA AND LIGHTING ---
@@ -142,10 +144,10 @@ def update():
                     leg_higher_pivot_1.rotation = Vec3(lh['p'], lh['y'], lh['r'])
                 if 'leg_lower' in data:
                     ll = data['leg_lower']
-                    leg_lower_pivot.rotation = Vec3(ll['p'], ll['y'], ll['r'])
+                    leg_lower_pivot_1.rotation = Vec3(ll['p'], ll['y'], ll['r'])
                 if 'leg_foot' in data:
                     lf = data['leg_foot']
-                    leg_foot_pivot.rotation = Vec3(lf['p'], lf['y'], lf['r'])
+                    leg_foot_pivot_1.rotation = Vec3(lf['p'], lf['y'], lf['r'])
         except Exception:
             pass
 
@@ -189,12 +191,12 @@ def update():
     if held_keys['f']: leg_higher_pivot_1.rotation_x -= rotation_speed
 
     # Shin (Leg_Lower): 1 / 2 keys
-    if held_keys['1']: leg_lower_pivot.rotation_x += rotation_speed
-    if held_keys['2']: leg_lower_pivot.rotation_x -= rotation_speed
+    if held_keys['1']: leg_lower_pivot_1.rotation_x += rotation_speed
+    if held_keys['2']: leg_lower_pivot_1.rotation_x -= rotation_speed
 
     # Foot (Leg_Foot): 3 / 4 keys
-    if held_keys['3']: leg_foot_pivot.rotation_x += rotation_speed
-    if held_keys['4']: leg_foot_pivot.rotation_x -= rotation_speed
+    if held_keys['3']: leg_foot_pivot_1.rotation_x += rotation_speed
+    if held_keys['4']: leg_foot_pivot_1.rotation_x -= rotation_speed
 
 def input(key):
     global use_serial
@@ -205,9 +207,9 @@ def input(key):
         forearm_pivot.rotation = (0, 0, 0)
         hand_pivot.rotation = (0, 0, 0)
         leg_higher_pivot_1.rotation = (0, 0, 0)
-        leg_lower_pivot.rotation = (0, 0, 0)
-        leg_foot_pivot.rotation = (0, 0, 0)
-        
+        leg_lower_pivot_1.rotation = (0, 0, 0)
+        leg_foot_pivot_1.rotation = (0, 0, 0)
+
     # Toggle Sensors / Keyboard mode
     if key == 'tab':
         use_serial = not use_serial
