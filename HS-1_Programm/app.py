@@ -56,6 +56,7 @@ Entity(parent=hand_pivot, model='sphere', scale=1, color=color.yellow)
 
 
 # --- ARM 2 (Left / Second Arm) ---
+# --- ARM 2 (Right / Second Arm) ---
 shoulder_pivot_2 = Entity(parent=body_pivot, position=(0, -150, 38))
 shoulder_model_2 = Entity(
     parent=shoulder_pivot_2,
@@ -63,8 +64,8 @@ shoulder_model_2 = Entity(
     scale=1.0,
     color=color.azure,
     double_sided=True,
-    position=(0, -2.5, -570),
-    rotation=(270, 90, 0)
+    position=(0, -2.5, -570),     # Повертаємо нормальний зсув як у першої руки
+    rotation=(0, 180, 0)       # Розвертаємо тільки по Y на 180 градусів, щоб дивилася в інший бік
 )
 
 forearm_pivot_2 = Entity(parent=shoulder_pivot_2, position=(0, -235, 0)) 
@@ -74,7 +75,7 @@ forearm_model_2 = Entity(
     scale=1.0,
     color=color.lime,
     double_sided=True,
-    position=(0, -2.0, 0)
+    position=(0, -2.0, -570)
 )
 
 hand_pivot_2 = Entity(parent=forearm_pivot_2, position=(0, -150, 38))
@@ -84,7 +85,7 @@ hand_model_2 = Entity(
     scale=1.0,
     color=color.magenta,
     double_sided=True,
-    position=(0, -1.2, 0)
+    position=(0, -1.2, -646)
 )
 Entity(parent=hand_pivot_2, model='sphere', scale=1, color=color.yellow)
 
