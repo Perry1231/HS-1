@@ -15,35 +15,31 @@ struct Triangle {
     Vector3D v1, v2, v3;
 };
 
-void ConvertSTLToBinary(const fs::path& filePath) {
+void ForceConvertSTL(const fs::path& filePath) {
     std::ifstream inFile(filePath, std::ios::binary);
     if (!inFile.is_open()) return;
 
+    // Зчитуємо весь файл в пам'ять
+    std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+    inFile.close();
+
+    std::stringstream ss(content);
     std::string line;
-    std::getline(inFile, line);
-
-    // Якщо файл не починається з solid, він або вже бінарний, або порожній
-    if (line.rfind("solid", 0) != 0) {
-        std::cout << "[SKIP] File " << filePath.filename().string() << " is already Binary or custom.\n";
-        return;
-    }
-
-    inFile.seekg(0, std::ios::beg);
     std::vector<Triangle> triangles;
-    Triangle currentTriangle;
+    Triangle currentTriangle = {};
     std::vector<Vector3D> currentVertices;
 
-    while (std::getline(inFile, line)) {
-        std::stringstream ss(line);
+    while (std::getline(ss, line)) {
+        std::stringstream lineStream(line);
         std::string token;
-        ss >> token;
+        lineStream >> token;
 
         if (token == "facet") {
-            ss >> token; // normal
-            ss >> currentTriangle.normal.x >> currentTriangle.normal.y >> currentTriangle.normal.z;
+            lineStream >> token; // normal
+            lineStream >> currentTriangle.normal.x >> currentTriangle.normal.y >> currentTriangle.normal.z;
         } else if (token == "vertex") {
             Vector3D v;
-            ss >> v.x >> v.y >> v.z;
+            lineStream >> v.x >> v.y >> v.z;
             currentVertices.push_back(v);
             if (currentVertices.size() == 3) {
                 currentTriangle.v1 = currentVertices[0];
@@ -54,16 +50,15 @@ void ConvertSTLToBinary(const fs::path& filePath) {
             }
         }
     }
-    inFile.close();
 
     if (triangles.empty()) {
-        std::cout << "[INFO] No ASCII triangles parsed in " << filePath.filename().string() << "\n";
+        std::cout << "[WARN] " << filePath.filename().string() << " could not be parsed as ASCII text. (Might be corrupted binary).\n";
         return;
     }
 
-    // Записуємо чистий Binary STL
+    // Записуємо ВАЛІДНИЙ Binary STL: 80 байт пустий заголовок + uint32 count + трикутники
     std::ofstream outFile(filePath, std::ios::binary | std::ios::trunc);
-    uint8_t header[80] = {0};
+    uint8_t header[80] = {0}; // Чистий нульовий заголовок (без слова solid)
     outFile.write(reinterpret_cast<char*>(header), 80);
 
     uint32_t count = static_cast<uint32_t>(triangles.size());
@@ -91,7 +86,7 @@ int main() {
 
     for (const auto& entry : fs::directory_iterator(modelsDir)) {
         if (entry.path().extension() == ".stl") {
-            ConvertSTLToBinary(entry.path());
+            ForceConvertSTL(entry.path());
         }
     }
     return 0;
