@@ -1,89 +1,158 @@
 #include "serial_reader.h"
-#include <windows.h>
+#include "json.hpp" // nlohmann/json
 #include <iostream>
+#include <sstream>
 
-SerialReader::SerialReader() = default;
+using json = nlohmann::json;
+
+SerialReader::SerialReader() 
+    : hSerial(INVALID_HANDLE_VALUE), running(false), isConnected(false) {}
 
 SerialReader::~SerialReader() {
     Stop();
 }
 
 bool SerialReader::Start(const std::string& portName, int baudRate) {
-    if (running) return false;
+    if (running) return true;
+
     running = true;
-    worker = std::thread(&SerialReader::WorkerThread, this, portName, baudRate);
+    workerThread = std::thread(&SerialReader::WorkerThread, this, portName, baudRate);
     return true;
 }
 
 void SerialReader::Stop() {
-    if (running) {
-        running = false;
-        if (worker.joinable()) {
-            worker.join();
-        }
-        isConnected = false;
+    running = false;
+
+    if (workerThread.joinable()) {
+        workerThread.join();
     }
+
+    if (hSerial != INVALID_HANDLE_VALUE) {
+        CloseHandle(hSerial);
+        hSerial = INVALID_HANDLE_VALUE;
+    }
+
+    isConnected = false;
 }
 
-nlohmann::json SerialReader::GetLatestData() {
+bool SerialReader::IsConnected() const {
+    return isConnected;
+}
+
+JointTelemetry SerialReader::GetLatestData() {
     std::lock_guard<std::mutex> lock(dataMutex);
     return latestData;
 }
 
 void SerialReader::WorkerThread(std::string portName, int baudRate) {
-    HANDLE hSerial = CreateFileA(portName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    
+    // Attempt to open COM Port
+    std::string fullPortName = "\\\\.\\" + portName;
+    hSerial = CreateFileA(fullPortName.c_str(), 
+                          GENERIC_READ | GENERIC_WRITE, 
+                          0, NULL, 
+                          OPEN_EXISTING, 
+                          FILE_ATTRIBUTE_NORMAL, 
+                          NULL);
+
     if (hSerial == INVALID_HANDLE_VALUE) {
-        std::cout << "[Serial] Cannot open " << portName << ". Running in visual-only mode.\n";
+        std::cout << "[SerialReader] Port " << portName << " not found. Running in Offline Mode.\n";
         isConnected = false;
-        running = false; 
+        
+        // Wait silently while thread is running without blocking main thread
+        while (running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
         return;
     }
 
-
+    // Configure DCB parameters
     DCB dcbSerialParams = { 0 };
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-    GetCommState(hSerial, &dcbSerialParams);
+
+    if (!GetCommState(hSerial, &dcbSerialParams)) {
+        std::cout << "[SerialReader] Error getting COM state.\n";
+        CloseHandle(hSerial);
+        hSerial = INVALID_HANDLE_VALUE;
+        isConnected = false;
+        return;
+    }
+
     dcbSerialParams.BaudRate = baudRate;
     dcbSerialParams.ByteSize = 8;
     dcbSerialParams.StopBits = ONESTOPBIT;
-    dcbSerialParams.Parity = NOPARITY;
-    SetCommState(hSerial, &dcbSerialParams);
+    dcbSerialParams.Parity   = NOPARITY;
 
+    if (!SetCommState(hSerial, &dcbSerialParams)) {
+        std::cout << "[SerialReader] Error setting COM parameters.\n";
+        CloseHandle(hSerial);
+        hSerial = INVALID_HANDLE_VALUE;
+        isConnected = false;
+        return;
+    }
+
+    // Set non-blocking timeouts
     COMMTIMEOUTS timeouts = { 0 };
-    timeouts.ReadIntervalTimeout = 50;
-    timeouts.ReadTotalTimeoutConstant = 50;
-    timeouts.ReadTotalTimeoutMultiplier = 10;
+    timeouts.ReadIntervalTimeout         = 20;
+    timeouts.ReadTotalTimeoutConstant    = 50;
+    timeouts.ReadTotalTimeoutMultiplier  = 10;
     SetCommTimeouts(hSerial, &timeouts);
 
     isConnected = true;
-    std::cout << "[Serial] Connected to " << portName << "\n";
+    std::cout << "[SerialReader] Successfully connected to " << portName << " at " << baudRate << " baud.\n";
 
-    char szBuff[256];
     std::string lineBuffer = "";
+    char readBuffer[128];
+    DWORD bytesRead = 0;
 
     while (running) {
-        DWORD dwBytesRead = 0;
-        if (ReadFile(hSerial, szBuff, sizeof(szBuff) - 1, &dwBytesRead, NULL) && dwBytesRead > 0) {
-            szBuff[dwBytesRead] = '\0';
-            lineBuffer += szBuff;
+        if (ReadFile(hSerial, readBuffer, sizeof(readBuffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+            readBuffer[bytesRead] = '\0';
+            lineBuffer += readBuffer;
 
-            size_t pos;
+            size_t pos = 0;
             while ((pos = lineBuffer.find('\n')) != std::string::npos) {
                 std::string line = lineBuffer.substr(0, pos);
                 lineBuffer.erase(0, pos + 1);
 
-                if (!line.empty() && line.front() == '{' && line.back() == '}') {
-                    try {
-                        auto j = nlohmann::json::parse(line);
+                // Trim carriage return \r
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+
+                // Parse incoming JSON telemetry string
+                try {
+                    auto j = json::parse(line);
+                    JointTelemetry data;
+
+                    if (j.contains("body")) {
+                        data.bodyPitch = j["body"].value("pitch", 0.0f);
+                        data.bodyRoll  = j["body"].value("roll", 0.0f);
+                        data.bodyYaw   = j["body"].value("yaw", 0.0f);
+                    }
+                    if (j.contains("shoulder")) {
+                        data.shoulderPitch = j["shoulder"].value("pitch", 0.0f);
+                        data.shoulderRoll  = j["shoulder"].value("roll", 0.0f);
+                    }
+                    if (j.contains("forearm")) {
+                        data.forearmPitch = j["forearm"].value("pitch", 0.0f);
+                    }
+
+                    // Thread-safe update
+                    {
                         std::lock_guard<std::mutex> lock(dataMutex);
-                        latestData = j;
-                    } catch (...) {}
+                        latestData = data;
+                    }
+                }
+                catch (const json::parse_error&) {
+                    // Ignore partial or corrupted serial lines
                 }
             }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
     CloseHandle(hSerial);
+    hSerial = INVALID_HANDLE_VALUE;
     isConnected = false;
 }
