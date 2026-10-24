@@ -32,11 +32,14 @@ nlohmann::json SerialReader::GetLatestData() {
 
 void SerialReader::WorkerThread(std::string portName, int baudRate) {
     HANDLE hSerial = CreateFileA(portName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    
     if (hSerial == INVALID_HANDLE_VALUE) {
-        std::cout << "[Serial] Failed to open " << portName << "\n";
-        running = false;
+        std::cout << "[Serial] Cannot open " << portName << ". Running in visual-only mode.\n";
+        isConnected = false;
+        running = false; 
         return;
     }
+
 
     DCB dcbSerialParams = { 0 };
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
