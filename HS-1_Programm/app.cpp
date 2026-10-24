@@ -1,71 +1,124 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
-#include "serial_reader.h"
 #include <iostream>
 
+// Структура кутів для керування суглобами
+struct EulerAngles { float p = 0, y = 0, r = 0; };
+
+struct RobotState {
+    EulerAngles body;
+    EulerAngles shoulder;
+    EulerAngles forearm;
+    EulerAngles hand;
+} robot;
+
 int main() {
-    InitWindow(1280, 720, "HS-1 Exoskeleton - Debug View");
+    InitWindow(1280, 720, "HS-1 Exoskeleton - 3D Viewer Mode");
     SetTargetFPS(60);
 
+    // 1. Камера зафіксована на зручній відстані від костюма
     Camera3D camera = { 0 };
-    camera.position = (Vector3){ 0.0f, 50.0f, 200.0f }; // Віддалена камера
-    camera.target = (Vector3){ 0.0f, 20.0f, 0.0f };
+    camera.position = (Vector3){ 0.0f, 20.0f, 120.0f };
+    camera.target = (Vector3){ 0.0f, 10.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    // Спробуємо завантажити деталь Корпусу
-    Model bodyModel = LoadModel("Models/Body_2_0.stl");
-    bool isModelLoaded = (bodyModel.meshCount > 0);
+    // 2. Завантаження 3D-моделей за прямим шляхом
+    // (Якщо назви файлів відрізняються — підкоригуй їх нижче)
+    // Абсолютний шлях до кожної моделі
+Model bodyModel    = LoadModel("Models/Body_2_0.stl");
+Model bicepsModel  = LoadModel("Models/Biceps_2_0.stl");
+Model forearmModel = LoadModel("Models/Forearm_2_0.stl");
+Model handModel    = LoadModel("Models/Hand_2_0.stl");
 
-    if (isModelLoaded) {
-        std::cout << "[SUCCESS] STL-модель Body_2_0.stl завантажена успішно!\n";
-    } else {
-        std::cout << "[ERROR] Не вдалося знайти Models/Body_2_0.stl!\n";
-    }
+// Перевірка: модель вважається завантаженою, якщо meshCount > 0
+bool hasBody = (bodyModel.meshCount > 0 && bodyModel.meshes != NULL);
 
-    // Запускаємо Serial у фоні (якщо порту немає, програма НЕ зупиниться)
-    SerialReader serial;
-    serial.Start("COM3", 115200);
-
-    float debugAngle = 0.0f;
+    float autoRotate = 0.0f;
 
     while (!WindowShouldClose()) {
-        debugAngle += 0.5f; // Тестове автообертання костюма
+        // --- A. КЕРУВАННЯ ---
+        // Автоматичне повільне обертання для огляду
+        autoRotate += 0.5f;
 
-        UpdateCamera(&camera, CAMERA_FREE);
+        // Вільний огляд мишкою ТІЛЬКИ при затиснутій правій кнопці миші (ПКМ)
+        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+            UpdateCamera(&camera, CAMERA_FREE);
+        }
 
+        // Натисни R, якщо камера вилетіла
+        if (IsKeyPressed(KEY_R)) {
+            camera.position = (Vector3){ 0.0f, 20.0f, 120.0f };
+            camera.target = (Vector3){ 0.0f, 10.0f, 0.0f };
+        }
+
+        // --- B. ВІДОБРАЖЕННЯ (RENDERING) ---
         BeginDrawing();
         ClearBackground(DARKGRAY);
 
         BeginMode3D(camera);
-            DrawGrid(50, 10.0f);
+            DrawGrid(40, 5.0f); // Сітка під костюмом
 
-            if (isModelLoaded) {
-                // Якщо деталь завантажилась — малюємо її із масштабом 0.1f (якщо з Fusion у мм)
+            if (hasBody) {
+                // Ієрархічний рендеринг екзоскелета
                 rlPushMatrix();
-                    rlRotatef(debugAngle, 0, 1, 0); // Обертаємо для перевірки
-                    DrawModel(bodyModel, (Vector3){0, 0, 0}, 0.1f, ORANGE);
-                    DrawModelWires(bodyModel, (Vector3){0, 0, 0}, 0.1f, BLACK);
+                    // Загальне обертання костюма навколо своєї осі
+                    rlRotatef(autoRotate, 0, 1, 0);
+
+                    // 1. Корпус
+                    DrawModel(bodyModel, (Vector3){0, 0, 0}, 0.05f, ORANGE);
+                    DrawModelWires(bodyModel, (Vector3){0, 0, 0}, 0.05f, BLACK);
+
+                    // 2. Плече / Біцепс (зміщення від центру корпусу)
+                    rlPushMatrix();
+                        rlTranslatef(10.0f, 15.0f, 0.0f);
+                        DrawModel(bicepsModel, (Vector3){0, 0, 0}, 0.05f, LIGHTGRAY);
+                        DrawModelWires(bicepsModel, (Vector3){0, 0, 0}, 0.05f, DARKGRAY);
+
+                        // 3. Передпліччя (зміщення від ліктя)
+                        rlPushMatrix();
+                            rlTranslatef(0.0f, -12.0f, 0.0f);
+                            DrawModel(forearmModel, (Vector3){0, 0, 0}, 0.05f, GRAY);
+                            DrawModelWires(forearmModel, (Vector3){0, 0, 0}, 0.05f, BLACK);
+
+                            // 4. Кисть (зміщення від зап'ястя)
+                            rlPushMatrix();
+                                rlTranslatef(0.0f, -10.0f, 0.0f);
+                                DrawModel(handModel, (Vector3){0, 0, 0}, 0.05f, DARKGRAY);
+                            rlPopMatrix();
+
+                        rlPopMatrix();
+                    rlPopMatrix();
+
                 rlPopMatrix();
             } else {
-                // Якщо STL не знайдена — малюємо червоний тестовий куб
-                DrawCube((Vector3){0, 15, 0}, 20.0f, 30.0f, 10.0f, RED);
-                DrawCubeWires((Vector3){0, 15, 0}, 20.0f, 30.0f, 10.0f, WHITE);
+                // Якщо STL-файли не знайдені — малюємо макет костюма з блоків
+                DrawCube((Vector3){0, 15, 0}, 15.0f, 25.0f, 8.0f, ORANGE);       // Тулуб
+                DrawCubeWires((Vector3){0, 15, 0}, 15.0f, 25.0f, 8.0f, WHITE);
+                
+                DrawCube((Vector3){12, 22, 0}, 6.0f, 15.0f, 6.0f, LIGHTGRAY);    // Праве плече
+                DrawCube((Vector3){-12, 22, 0}, 6.0f, 15.0f, 6.0f, LIGHTGRAY);   // Ліве плече
             }
         EndMode3D();
 
-        // Статус у кутку екрану
-        DrawText(TextFormat("Serial: %s", serial.IsConnected() ? "CONNECTED" : "DISCONNECTED (OFFLINE)"), 10, 10, 18, serial.IsConnected() ? GREEN : RED);
-        DrawText(isModelLoaded ? "STL Status: LOADED" : "STL Status: NOT FOUND (Drawing Test Red Cube)", 10, 35, 18, isModelLoaded ? GREEN : RED);
-        DrawText("Затисни ПКМ + мишка для обертання камери", 10, 60, 15, LIGHTGRAY);
+        // Текстова панель
+        DrawText("HS-1 Exoskeleton - Offline 3D Mode", 10, 10, 20, RAYWHITE);
+        DrawText(hasBody ? "STL Models: LOADED" : "STL Models: NOT FOUND (Drawing Placeholder Box)", 10, 35, 16, hasBody ? GREEN : RED);
+        DrawText("Затисни ПКМ для обертання камери | [R] - скинути камеру", 10, 60, 14, LIGHTGRAY);
 
         EndDrawing();
     }
 
-    serial.Stop();
-    if (isModelLoaded) UnloadModel(bodyModel);
+    // Очищення пам'яті
+    if (hasBody) {
+        UnloadModel(bodyModel);
+        UnloadModel(bicepsModel);
+        UnloadModel(forearmModel);
+        UnloadModel(handModel);
+    }
+
     CloseWindow();
     return 0;
 }
