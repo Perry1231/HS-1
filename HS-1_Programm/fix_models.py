@@ -8,5 +8,5 @@ for m in models:
     if os.path.exists(path):
         print(f"Конвертуємо {m} у трикутну сітку...")
         mesh = trimesh.load(path, force='mesh')
-        mesh.export(path) # Перезаписуємо з правильними трикутниками
+        mesh.export(path) # Rewrite with good
         print(f"[OK] {m} успішно виправлено!")
