@@ -8,6 +8,12 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
+#undef DrawText
+#undef DrawTextEx
+#undef Rectangle
+#undef CloseWindow
+#undef ShowCursor
 #endif
 
 using json = nlohmann::json;
