@@ -19,7 +19,6 @@ void ForceConvertSTL(const fs::path& filePath) {
     std::ifstream inFile(filePath, std::ios::binary);
     if (!inFile.is_open()) return;
 
-    // Зчитуємо весь файл в пам'ять
     std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
     inFile.close();
 
@@ -56,9 +55,8 @@ void ForceConvertSTL(const fs::path& filePath) {
         return;
     }
 
-    // Записуємо ВАЛІДНИЙ Binary STL: 80 байт пустий заголовок + uint32 count + трикутники
     std::ofstream outFile(filePath, std::ios::binary | std::ios::trunc);
-    uint8_t header[80] = {0}; // Чистий нульовий заголовок (без слова solid)
+    uint8_t header[80] = {0}; 
     outFile.write(reinterpret_cast<char*>(header), 80);
 
     uint32_t count = static_cast<uint32_t>(triangles.size());
