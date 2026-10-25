@@ -25,59 +25,87 @@ int main() {
 
     ChangeDirectory("C:/Users/Dell/Desktop/projetcs/GitHub Projects/HS-1/HS-1/HS-1_Programm");
 
-    // Завантаження всіх 7 моделей
-    Model modelBiceps  = LoadBinarySTL("Models/Biceps_2_0.stl");
-    Model modelBody    = LoadBinarySTL("Models/Body_2_0.stl");
-    Model modelForearm = LoadBinarySTL("Models/Forearm_2_0.stl");
-    Model modelHand    = LoadBinarySTL("Models/Hand_2_0.stl");
-    Model modelFoot    = LoadBinarySTL("Models/Leg_Foot_2_0.stl");
-    Model modelLegHigh = LoadBinarySTL("Models/Leg_Higher_2_0.stl");
-    Model modelLegLow  = LoadBinarySTL("Models/Leg_Lower_2_0.stl");
+    // --- 1. ЗАВАНТАЖЕННЯ ВСІХ МОДЕЛЕЙ (Права/Центр + Ліві) ---
+    // Права сторона / Центр
+    Model modelBicepsR   = LoadBinarySTL("Models/Biceps_2_0.stl");
+    Model modelBody      = LoadBinarySTL("Models/Body_2_0.stl");
+    Model modelForearmR  = LoadBinarySTL("Models/Forearm_2_0.stl");
+    Model modelHandR     = LoadBinarySTL("Models/Hand_2_0.stl");
+    Model modelFootR     = LoadBinarySTL("Models/Leg_Foot_2_0.stl");
+    Model modelLegHighR  = LoadBinarySTL("Models/Leg_Higher_2_0.stl");
+    Model modelLegLowR   = LoadBinarySTL("Models/Leg_Lower_2_0.stl");
 
-    bool isLoaded[7] = {
-        modelBiceps.meshCount > 0,
+    // Ліві частини (Змініть назви файлів нижче, якщо вони у вас називаються інакше)
+    Model modelBicepsL   = LoadBinarySTL("Models/Biceps_Left_2_0.stl");
+    Model modelForearmL  = LoadBinarySTL("Models/Forearm_Left_2_0.stl");
+    Model modelHandL     = LoadBinarySTL("Models/Hand_Left_2_0.stl");
+    Model modelFootL     = LoadBinarySTL("Models/Leg_Foot_Left_2_0.stl");
+    Model modelLegHighL  = LoadBinarySTL("Models/Leg_Higher_Left_2_0.stl");
+    Model modelLegLowL   = LoadBinarySTL("Models/Leg_Lower_Left_2_0.stl");
+
+    const int totalParts = 13; // Всього 13 частин тіла
+
+    bool isLoaded[13] = {
+        modelBicepsR.meshCount > 0,
         modelBody.meshCount > 0,
-        modelForearm.meshCount > 0,
-        modelHand.meshCount > 0,
-        modelFoot.meshCount > 0,
-        modelLegHigh.meshCount > 0,
-        modelLegLow.meshCount > 0
+        modelForearmR.meshCount > 0,
+        modelHandR.meshCount > 0,
+        modelFootR.meshCount > 0,
+        modelLegHighR.meshCount > 0,
+        modelLegLowR.meshCount > 0,
+        modelBicepsL.meshCount > 0,
+        modelForearmL.meshCount > 0,
+        modelHandL.meshCount > 0,
+        modelFootL.meshCount > 0,
+        modelLegHighL.meshCount > 0,
+        modelLegLowL.meshCount > 0
     };
-
-    const int totalParts = 7;
     
-    PartTransform parts[7] = {
-        //Position + pitch + yaw
-        // 0: Biceps (Тулуб / плечі)
-        { {0.0f, 20.0f, 0.0f}, -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 20.0f, 0.0f}, -90.0f, 0.0f, 0.0f, 0.05f },
+    // --- 2. МАСИВ НАЛАШТУВАНЬ ДЛЯ ВСІХ 13 ЧАСТИН ---
+    PartTransform parts[13] = {
+        // 0: Right Biceps
+        { {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 1: Body
+        { {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 2: Right Forearm
+        { {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 3: Right Hand
+        { {0.0f, 10.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 10.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 4: Right Foot
+        { {0.0f, 0.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 0.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f },
+        // 5: Right Leg Higher
+        { {0.0f, 8.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 8.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f },
+        // 6: Right Leg Lower
+        { {0.0f, 4.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 4.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f },
         
-        // 1: Body (Головний тулуб)
-        { {0.0f, 15.0f, 0.0f}, 90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 15.0f, 0.0f}, -90.0f, 0.0f, 0.0f, 0.05f },
-        
-        // 2: Forearm (Передпліччя)
-        { {20.0f, 31.0f, 0.0f}, -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 10.0f, 0.0f}, -90.0f, 0.0f, 0.0f, 0.05f },
-        
-        // 3: Hand (Кисть)
-        { {0.0f, 5.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 5.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f },
-        
-        // 4: Leg Foot (Стопа)
-        { {0.0f, 0.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 0.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f },
-        
-        // 5: Leg Higher (Верхня частина ноги / стегно)
-        { {0.0f, 8.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 8.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f },
-        
-        // 6: Leg Lower (Нижня частина ноги / гомілка)
-        { {0.0f, 4.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 4.0f, 0.0f},  -90.0f, 0.0f, 0.0f, 0.05f }
+        // 7: Left Biceps
+        { {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 8: Left Forearm
+        { {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 15.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 9: Left Hand
+        { {0.0f, 10.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 10.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
+        // 10: Left Foot
+        { {0.0f, 0.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 0.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f },
+        // 11: Left Leg Higher
+        { {0.0f, 8.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 8.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f },
+        // 12: Left Leg Lower
+        { {0.0f, 4.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 4.0f, 0.0f},  0.0f, 0.0f, 0.0f, 0.05f }
     };
 
-    const char* partNames[7] = { 
-        "1. Biceps", 
+    const char* partNames[13] = { 
+        "1. Right Biceps", 
         "2. Body", 
-        "3. Forearm", 
-        "4. Hand", 
-        "5. Leg Foot", 
-        "6. Leg Higher", 
-        "7. Leg Lower" 
+        "3. Right Forearm", 
+        "4. Right Hand", 
+        "5. Right Foot", 
+        "6. Right Leg High", 
+        "7. Right Leg Low",
+        "8. Left Biceps", 
+        "9. Left Forearm", 
+        "10. Left Hand", 
+        "11. Left Foot", 
+        "12. Left Leg High", 
+        "13. Left Leg Low"
     };
 
     int selectedPart = 0; 
@@ -145,10 +173,16 @@ int main() {
         BeginMode3D(camera);
             DrawGrid(50, 10.0f);
 
-            Model* models[7] = { &modelBiceps, &modelBody, &modelForearm, &modelHand, &modelFoot, &modelLegHigh, &modelLegLow };
-            Color colors[7] = { RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE };
+            Model* models[13] = { 
+                &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
+                &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
+            };
+            Color colors[13] = { 
+                RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
+                MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
+            };
 
-            for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < 13; i++) {
                 if (isLoaded[i]) {
                     rlPushMatrix();
                         rlTranslatef(parts[i].pos.x, parts[i].pos.y, parts[i].pos.z);
@@ -177,7 +211,8 @@ int main() {
         }
 
         if (showControlWindow) {
-            Rectangle winRect = { (float)GetScreenWidth() - 320, 50, 300, 380 };
+            // Вікно керування (збільшене по висоті під список із 13 елементів)
+            Rectangle winRect = { (float)GetScreenWidth() - 320, 50, 300, 420 };
             DrawRectangleRec(winRect, LIGHTGRAY);
             DrawRectangleLines((int)winRect.x, (int)winRect.y, (int)winRect.width, (int)winRect.height, BLACK);
             
@@ -223,13 +258,17 @@ int main() {
             float moveStep = 0.2f;
             Rectangle btnUp = { winRect.x + 125, winRect.y + 90, 50, 30 };
             Rectangle btnDown = { winRect.x + 125, winRect.y + 160, 50, 30 };
-            Rectangle btnLeft = { winRect.x + 65, winRect.y + 125, 50, 30 };
-            Rectangle btnRight = { winRect.x + 185, winRect.y + 125, 50, 30 };
+            Rectangle btnLeft = { winRect.x + 20, winRect.y + 125, 65, 30 };
+            Rectangle btnRight = { winRect.x + 215, winRect.y + 125, 65, 30 };
+            Rectangle btnBack = { winRect.x + 90, winRect.y + 125, 30, 30 };
+            Rectangle btnFwd  = { winRect.x + 180, winRect.y + 125, 30, 30 };
 
             if (DrawHoldButton(btnUp, "UP"))    parts[selectedPart].pos.y += moveStep;
             if (DrawHoldButton(btnDown, "DOWN"))  parts[selectedPart].pos.y -= moveStep;
             if (DrawHoldButton(btnLeft, "LEFT"))  parts[selectedPart].pos.x -= moveStep;
             if (DrawHoldButton(btnRight, "RIGHT")) parts[selectedPart].pos.x += moveStep;
+            if (DrawHoldButton(btnBack, "BACK"))   parts[selectedPart].pos.z += moveStep;
+            if (DrawHoldButton(btnFwd, "FWD"))    parts[selectedPart].pos.z -= moveStep;
 
             float rotStep = 1.0f;
             Rectangle btnRotLeft = { winRect.x + 65, winRect.y + 205, 75, 30 };
@@ -265,13 +304,14 @@ int main() {
 
             DrawText("Config saved to exoskeleton_config.txt", (int)winRect.x + 35, (int)winRect.y + 345, 10, DARKGRAY);
 
+            // Випадаючий список (з прокруткою або вибором потрібної деталі з усіх 13)
             if (showDropdownList) {
                 for (int i = 0; i < totalParts; i++) {
-                    Rectangle itemRect = { winRect.x + 15, winRect.y + 75 + (float)(i * 25), 270, 25 };
+                    Rectangle itemRect = { winRect.x + 15, winRect.y + 75 + (float)(i * 20), 270, 20 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, itemHover ? LIGHTGRAY : WHITE);
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
-                    DrawText(partNames[i], (int)itemRect.x + 10, (int)itemRect.y + 6, 12, BLACK);
+                    DrawText(partNames[i], (int)itemRect.x + 5, (int)itemRect.y + 4, 10, BLACK);
 
                     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
                         selectedPart = i;
@@ -289,13 +329,20 @@ int main() {
         EndDrawing();
     }
 
-    if (isLoaded[0]) UnloadModel(modelBiceps);
+    // Вивантаження всіх моделей при закритті
+    if (isLoaded[0]) UnloadModel(modelBicepsR);
     if (isLoaded[1]) UnloadModel(modelBody);
-    if (isLoaded[2]) UnloadModel(modelForearm);
-    if (isLoaded[3]) UnloadModel(modelHand);
-    if (isLoaded[4]) UnloadModel(modelFoot);
-    if (isLoaded[5]) UnloadModel(modelLegHigh);
-    if (isLoaded[6]) UnloadModel(modelLegLow);
+    if (isLoaded[2]) UnloadModel(modelForearmR);
+    if (isLoaded[3]) UnloadModel(modelHandR);
+    if (isLoaded[4]) UnloadModel(modelFootR);
+    if (isLoaded[5]) UnloadModel(modelLegHighR);
+    if (isLoaded[6]) UnloadModel(modelLegLowR);
+    if (isLoaded[7]) UnloadModel(modelBicepsL);
+    if (isLoaded[8]) UnloadModel(modelForearmL);
+    if (isLoaded[9]) UnloadModel(modelHandL);
+    if (isLoaded[10]) UnloadModel(modelFootL);
+    if (isLoaded[11]) UnloadModel(modelLegHighL);
+    if (isLoaded[12]) UnloadModel(modelLegLowL);
 
     CloseWindow();
     return 0;
