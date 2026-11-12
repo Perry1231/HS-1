@@ -74,14 +74,11 @@ int main() {
         "11. Left Foot", "12. Left Leg High", "13. Left Leg Low"
     };
 
-    // --- 2D MODE & CONNECTION STATUS ---
+    // --- MODES & CONNECTION STATUS ---
     bool is2DMode = false;
+    bool isProgramSettingsMode = false;
     
-    // By default nothing is connected (all parts will be white)
     bool bodyConnected[13] = { false }; 
-    // Example for testing:
-    // bodyConnected[0] = true; // Right Biceps -> Green
-    // bodyConnected[1] = true; // Body -> Green
 
     int selectedPart = 0; 
     bool showDropdownList = false;
@@ -140,7 +137,7 @@ int main() {
             }
         }
 
-        if (!is2DMode && !showControlWindow && !showKeybindsWindow && waitingForKeyIndex == -1) {
+        if (!is2DMode && !isProgramSettingsMode && !showControlWindow && !showKeybindsWindow && waitingForKeyIndex == -1) {
             float camSpeed = 1.5f;
             Vector3 forward = { camera.target.x - camera.position.x, 0.0f, camera.target.z - camera.position.z };
             float forwardLen = sqrtf(forward.x * forward.x + forward.z * forward.z);
@@ -156,16 +153,16 @@ int main() {
             if (IsKeyDown(keyUpCam))   { camera.position.y += camSpeed; camera.target.y += camSpeed; }
         }
 
-        if (!is2DMode && IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+        if (!is2DMode && !isProgramSettingsMode && IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
             UpdateCamera(&camera, CAMERA_FREE);
         }
 
-        if (IsKeyPressed(KEY_R)) {
+        if (!isProgramSettingsMode && IsKeyPressed(KEY_R)) {
             camera.position = (Vector3){ 0.0f, 30.0f, 150.0f };
             camera.target = (Vector3){ 0.0f, 20.0f, 0.0f };
         }
 
-        if (!is2DMode) {
+        if (!is2DMode && !isProgramSettingsMode) {
             if (IsKeyDown(KEY_KP_ADD) || IsKeyDown(KEY_EQUAL))      parts[selectedPart].scale += 0.001f;
             if (IsKeyDown(KEY_KP_SUBTRACT) || IsKeyDown(KEY_MINUS)) parts[selectedPart].scale -= 0.001f;
         }
@@ -173,7 +170,28 @@ int main() {
         BeginDrawing();
         ClearBackground(DARKGRAY);
 
-        if (!is2DMode) {
+        if (isProgramSettingsMode) {
+            // ================= PROGRAMM SETTINGS PAGE =================
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), DARKGRAY);
+            DrawText("PROGRAMM SETTINGS", 40, 30, 26, RAYWHITE);
+            DrawLine(40, 65, GetScreenWidth() - 40, 65, GRAY);
+
+            // --- BACK BUTTON (TOP RIGHT) ---
+            Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
+            bool btnBackHover = CheckCollisionPointRec(mousePos, btnBackTopRight);
+            DrawRectangleRec(btnBackTopRight, btnBackHover ? RED : MAROON);
+            DrawRectangleLines((int)btnBackTopRight.x, (int)btnBackTopRight.y, (int)btnBackTopRight.width, (int)btnBackTopRight.height, RAYWHITE);
+            
+            int backTxtW = MeasureText("Back", 16);
+            DrawText("Back", (int)(btnBackTopRight.x + (btnBackTopRight.width - backTxtW) / 2), (int)btnBackTopRight.y + 9, 16, RAYWHITE);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
+                isProgramSettingsMode = false;
+            }
+
+            DrawText("Application settings and hardware connection options:", 40, 90, 18, LIGHTGRAY);
+
+        } else if (!is2DMode) {
             // ================= 3D MODE =================
             BeginMode3D(camera);
                 DrawGrid(50, 10.0f);
@@ -217,7 +235,7 @@ int main() {
                 showKeybindsWindow = false;
             }
 
-            // --- PART CONTROLS BUTTON ---
+            // --- 1. PART CONTROLS BUTTON ---
             Rectangle btnOpenRect = { (float)GetScreenWidth() - 180, 10, 170, 30 };
             bool btnOpenHover = CheckCollisionPointRec(mousePos, btnOpenRect);
             DrawRectangleRec(btnOpenRect, btnOpenHover ? LIGHTGRAY : GRAY);
@@ -230,7 +248,7 @@ int main() {
                 showDropdownList = false;
             }
 
-            // --- KEYBINDS SETUP BUTTON ---
+            // --- 2. KEYBINDS SETUP BUTTON ---
             Rectangle btnKeybindsRect = { (float)GetScreenWidth() - 180, 50, 170, 30 };
             bool btnKeybindsHover = CheckCollisionPointRec(mousePos, btnKeybindsRect);
             DrawRectangleRec(btnKeybindsRect, btnKeybindsHover ? LIGHTGRAY : GRAY);
@@ -242,9 +260,23 @@ int main() {
                 showControlWindow = false;
             }
 
-            // Part Controls Window
+            // --- 3. PROGRAMM SETTINGS BUTTON ---
+            Rectangle btnProgSettingsRect = { (float)GetScreenWidth() - 180, 90, 170, 30 };
+            bool btnProgSettingsHover = CheckCollisionPointRec(mousePos, btnProgSettingsRect);
+            DrawRectangleRec(btnProgSettingsRect, btnProgSettingsHover ? LIGHTGRAY : GRAY);
+            DrawRectangleLines((int)btnProgSettingsRect.x, (int)btnProgSettingsRect.y, (int)btnProgSettingsRect.width, (int)btnProgSettingsRect.height, BLACK);
+            DrawText("Programm Settings", (int)btnProgSettingsRect.x + 18, (int)btnProgSettingsRect.y + 8, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnProgSettingsHover) {
+                isProgramSettingsMode = true;
+                showControlWindow = false;
+                showKeybindsWindow = false;
+                showDropdownList = false;
+            }
+
+            // Part Controls Window (shifted down to Y=130 so it doesn't cover the 3rd button)
             if (showControlWindow) {
-                Rectangle winRect = { (float)GetScreenWidth() - 320, 90, 300, 420 };
+                Rectangle winRect = { (float)GetScreenWidth() - 320, 130, 300, 420 };
                 DrawRectangleRec(winRect, LIGHTGRAY);
                 DrawRectangleLines((int)winRect.x, (int)winRect.y, (int)winRect.width, (int)winRect.height, BLACK);
                 
@@ -352,9 +384,9 @@ int main() {
                 }
             }
 
-            // Keybinds Setup Window
+            // Keybinds Setup Window (shifted down to Y=130 so it doesn't cover the 3rd button)
             if (showKeybindsWindow) {
-                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 90, 300, 310 };
+                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 130, 300, 310 };
                 DrawRectangleRec(winKeyRect, LIGHTGRAY);
                 DrawRectangleLines((int)winKeyRect.x, (int)winKeyRect.y, (int)winKeyRect.width, (int)winKeyRect.height, BLACK);
                 
@@ -417,7 +449,7 @@ int main() {
             
             BodyBox2D layout[13] = {
                 { "Right Biceps",    { cx - 220, 180, 130, 45 }, 0  },
-                { "Body / Torso",    { cx - 75,  180, 150, 50 }, 1  }, // Compact height (50)
+                { "Body / Torso",    { cx - 75,  180, 150, 50 }, 1  },
                 { "Right Forearm",   { cx - 220, 240, 130, 45 }, 2  },
                 { "Right Hand",      { cx - 220, 300, 130, 40 }, 3  },
                 { "Right Foot",      { cx - 110, 500, 100, 40 }, 4  },
@@ -444,12 +476,14 @@ int main() {
                 DrawText(layout[i].label, (int)(layout[i].rect.x + (layout[i].rect.width - textWidth) / 2), (int)(layout[i].rect.y + 18), 10, textColor);
             }
 
-            // --- BACK TO 3D BUTTON ---
-            Rectangle btnBackTo3D = { cx - 125, (float)GetScreenHeight() - 100, 250, 50 };
+            // --- BACK TO 3D BUTTON (MATCHED HEIGHT & SIZE WITH 2D BUTTON) ---
+            Rectangle btnBackTo3D = { cx - 110, (float)GetScreenHeight() - 60, 220, 40 };
             bool btnBackHover = CheckCollisionPointRec(mousePos, btnBackTo3D);
             DrawRectangleRec(btnBackTo3D, btnBackHover ? ORANGE : DARKGRAY);
             DrawRectangleLines((int)btnBackTo3D.x, (int)btnBackTo3D.y, (int)btnBackTo3D.width, (int)btnBackTo3D.height, RAYWHITE);
-            DrawText("Back to 3D", (int)btnBackTo3D.x + 75, (int)btnBackTo3D.y + 16, 18, RAYWHITE);
+            
+            int backTextWidth = MeasureText("Back to 3D", 14);
+            DrawText("Back to 3D", (int)(btnBackTo3D.x + (btnBackTo3D.width - backTextWidth) / 2), (int)btnBackTo3D.y + 13, 14, RAYWHITE);
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
                 is2DMode = false;
