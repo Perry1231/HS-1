@@ -19,11 +19,72 @@ struct PartTransform {
     float scale;
 };
 
+struct ResolutionOption {
+    const char* label;
+    int width;
+    int height;
+};
+
+// Застосування роздільної здатності без блокування Alt+Tab
+void ApplyWindowResolution(int width, int height) {
+    int monitor = GetCurrentMonitor();
+    int monW = GetMonitorWidth(monitor);
+    int monH = GetMonitorHeight(monitor);
+
+    if (width >= 1920 || (width >= monW && height >= monH)) {
+        // Безрамковий повноекранний режим: перекриває панель завдань, але дозволяє Alt+Tab
+        ClearWindowState(FLAG_WINDOW_TOPMOST);
+        SetWindowState(FLAG_WINDOW_UNDECORATED);
+        SetWindowSize(width, height);
+        SetWindowPosition(0, 0);
+    } else {
+        // Звичайне вікно з хрестиком та рамкою
+        ClearWindowState(FLAG_WINDOW_UNDECORATED | FLAG_WINDOW_TOPMOST);
+        SetWindowSize(width, height);
+        SetWindowPosition(
+            (monW - width) / 2,
+            (monH - height) / 2
+        );
+    }
+}
+
 int main() {
-    InitWindow(1280, 720, "HS-1 Exoskeleton - Full Body Configurator");
-    SetTargetFPS(60);
+    ResolutionOption resolutions[] = {
+        { "1280 x 720 (HD)",      1280, 720  },
+        { "1366 x 768",           1366, 768  },
+        { "1600 x 900 (HD+)",     1600, 900  },
+        { "1920 x 1080 (FullHD)", 1920, 1080 }
+    };
+    const int totalResolutions = 4;
+    int selectedResolution = 0;
+    bool showResolutionDropdown = false;
+
+    int keyForward = KEY_UP;
+    int keyBackward = KEY_DOWN;
+    int keyLeft = KEY_LEFT;
+    int keyRight = KEY_RIGHT;
+    int keyUpCam = KEY_LEFT_SHIFT;
+    int keyDownCam = KEY_LEFT_CONTROL;
 
     ChangeDirectory("C:/Users/Dell/Desktop/projetcs/GitHub Projects/HS-1/HS-1/HS-1_Programm");
+
+    std::ifstream progIn("program_settings.txt");
+    if (progIn.is_open()) {
+        int savedRes = 0;
+        if (progIn >> savedRes >> keyForward >> keyBackward >> keyLeft >> keyRight >> keyUpCam >> keyDownCam) {
+            if (savedRes >= 0 && savedRes < totalResolutions) {
+                selectedResolution = savedRes;
+            }
+        }
+        progIn.close();
+    }
+
+    InitWindow(resolutions[selectedResolution].width, resolutions[selectedResolution].height, "HS-1 Exoskeleton - Full Body Configurator");
+    ApplyWindowResolution(resolutions[selectedResolution].width, resolutions[selectedResolution].height);
+    SetTargetFPS(60);
+
+    // Вимикаємо закриття на ESC, щоб ESC тільки розблоковував курсор
+    SetExitKey(KEY_NULL);
 
     // --- 1. LOAD ALL MODELS ---
     Model modelBicepsR   = LoadBinarySTL("Models/Biceps_2_0.stl");
@@ -74,24 +135,16 @@ int main() {
         "11. Left Foot", "12. Left Leg High", "13. Left Leg Low"
     };
 
-    // --- MODES & CONNECTION STATUS ---
     bool is2DMode = false;
     bool isProgramSettingsMode = false;
+    bool shouldExitApp = false;
+    float settingsSavedTimer = 0.0f;
     
     bool bodyConnected[13] = { false }; 
 
     int selectedPart = 0; 
     bool showDropdownList = false;
-
-    // --- CUSTOMIZABLE KEYBINDS ---
-    int keyForward = KEY_UP;
-    int keyBackward = KEY_DOWN;
-    int keyLeft = KEY_LEFT;
-    int keyRight = KEY_RIGHT;
-    int keyUpCam = KEY_LEFT_SHIFT;
-    int keyDownCam = KEY_LEFT_CONTROL;
-    
-    int waitingForKeyIndex = -1; // -1 = ready, 0-5 = binding index
+    int waitingForKeyIndex = -1;
 
     std::ifstream inFile("exoskeleton_config.txt");
     if (inFile.is_open()) {
@@ -113,7 +166,11 @@ int main() {
     bool showKeybindsWindow = false;
     bool cursorUnlocked = false;
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose() && !shouldExitApp) {
+        if (settingsSavedTimer > 0.0f) {
+            settingsSavedTimer -= GetFrameTime();
+        }
+
         if (IsKeyPressed(KEY_ESCAPE)) {
             cursorUnlocked = !cursorUnlocked;
             if (cursorUnlocked) EnableCursor();
@@ -179,17 +236,74 @@ int main() {
             // --- BACK BUTTON (TOP RIGHT) ---
             Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
             bool btnBackHover = CheckCollisionPointRec(mousePos, btnBackTopRight);
-            DrawRectangleRec(btnBackTopRight, btnBackHover ? RED : MAROON);
+            DrawRectangleRec(btnBackTopRight, btnBackHover ? ORANGE : GRAY);
             DrawRectangleLines((int)btnBackTopRight.x, (int)btnBackTopRight.y, (int)btnBackTopRight.width, (int)btnBackTopRight.height, RAYWHITE);
             
             int backTxtW = MeasureText("Back", 16);
-            DrawText("Back", (int)(btnBackTopRight.x + (btnBackTopRight.width - backTxtW) / 2), (int)btnBackTopRight.y + 9, 16, RAYWHITE);
+            DrawText("Back", (int)(btnBackTopRight.x + (btnBackTopRight.width - backTxtW) / 2), (int)btnBackTopRight.y + 9, 16, BLACK);
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
                 isProgramSettingsMode = false;
+                showResolutionDropdown = false;
+                settingsSavedTimer = 0.0f;
             }
 
-            DrawText("Application settings and hardware connection options:", 40, 90, 18, LIGHTGRAY);
+            // --- 1. WINDOW RESOLUTION SETTING ---
+            DrawText("Window Resolution:", 40, 95, 18, RAYWHITE);
+
+            Rectangle resBtnRect = { 240, 88, 220, 35 };
+            bool resBtnHover = CheckCollisionPointRec(mousePos, resBtnRect);
+            DrawRectangleRec(resBtnRect, resBtnHover ? LIGHTGRAY : WHITE);
+            DrawRectangleLines((int)resBtnRect.x, (int)resBtnRect.y, (int)resBtnRect.width, (int)resBtnRect.height, BLACK);
+            
+            DrawText(TextFormat("%s  [v]", resolutions[selectedResolution].label), (int)resBtnRect.x + 12, (int)resBtnRect.y + 10, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && resBtnHover) {
+                showResolutionDropdown = !showResolutionDropdown;
+            }
+
+            // --- 2. SAVE PROGRAM SETTINGS BUTTON ---
+            Rectangle btnSaveProgRect = { 40, (float)GetScreenHeight() - 75, 220, 42 };
+            bool btnSaveProgHover = CheckCollisionPointRec(mousePos, btnSaveProgRect);
+            DrawRectangleRec(btnSaveProgRect, btnSaveProgHover ? LIME : GREEN);
+            DrawRectangleLines((int)btnSaveProgRect.x, (int)btnSaveProgRect.y, (int)btnSaveProgRect.width, (int)btnSaveProgRect.height, BLACK);
+            
+            int saveTxtW = MeasureText("Save Program Settings", 15);
+            DrawText("Save Program Settings", (int)(btnSaveProgRect.x + (btnSaveProgRect.width - saveTxtW) / 2), (int)btnSaveProgRect.y + 13, 15, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnSaveProgHover) {
+                std::ofstream progOut("program_settings.txt");
+                if (progOut.is_open()) {
+                    progOut << selectedResolution << " "
+                            << keyForward << " " << keyBackward << " "
+                            << keyLeft << " " << keyRight << " "
+                            << keyUpCam << " " << keyDownCam << "\n";
+                    progOut.close();
+                    settingsSavedTimer = 3.0f;
+                }
+            }
+
+            if (settingsSavedTimer > 0.0f) {
+                DrawText("Saved to program_settings.txt!", (int)btnSaveProgRect.x + 240, (int)btnSaveProgRect.y + 13, 16, GREEN);
+            }
+
+            if (showResolutionDropdown) {
+                for (int i = 0; i < totalResolutions; i++) {
+                    Rectangle itemRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height + (float)(i * 32), resBtnRect.width, 32 };
+                    bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
+                    
+                    Color itemColor = (i == selectedResolution) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE);
+                    DrawRectangleRec(itemRect, itemColor);
+                    DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
+                    DrawText(resolutions[i].label, (int)itemRect.x + 12, (int)itemRect.y + 9, 14, BLACK);
+
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
+                        selectedResolution = i;
+                        showResolutionDropdown = false;
+                        ApplyWindowResolution(resolutions[i].width, resolutions[i].height);
+                    }
+                }
+            }
 
         } else if (!is2DMode) {
             // ================= 3D MODE =================
@@ -220,7 +334,7 @@ int main() {
             EndMode3D();
 
             DrawText("HS-1 Exoskeleton - Full Body Configurator", 10, 10, 20, RAYWHITE);
-            DrawText("Camera: Custom Keys | RMB + Drag", 10, 35, 14, LIGHTGRAY);
+            DrawText("Camera: Custom Keys | RMB + Drag | Alt+Tab to switch", 10, 35, 14, LIGHTGRAY);
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
             Rectangle btnTo2D = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
@@ -233,6 +347,18 @@ int main() {
                 is2DMode = true;
                 showControlWindow = false;
                 showKeybindsWindow = false;
+            }
+
+            // --- EXIT APP BUTTON (BOTTOM RIGHT) ---
+            Rectangle btnExitApp = { (float)GetScreenWidth() - 130, (float)GetScreenHeight() - 55, 110, 35 };
+            bool btnExitHover = CheckCollisionPointRec(mousePos, btnExitApp);
+            DrawRectangleRec(btnExitApp, btnExitHover ? RED : MAROON);
+            DrawRectangleLines((int)btnExitApp.x, (int)btnExitApp.y, (int)btnExitApp.width, (int)btnExitApp.height, RAYWHITE);
+            int exitTxtW = MeasureText("Exit [X]", 14);
+            DrawText("Exit [X]", (int)(btnExitApp.x + (btnExitApp.width - exitTxtW) / 2), (int)btnExitApp.y + 10, 14, RAYWHITE);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnExitHover) {
+                shouldExitApp = true;
             }
 
             // --- 1. PART CONTROLS BUTTON ---
@@ -274,7 +400,7 @@ int main() {
                 showDropdownList = false;
             }
 
-            // Part Controls Window (shifted down to Y=130 so it doesn't cover the 3rd button)
+            // Part Controls Window
             if (showControlWindow) {
                 Rectangle winRect = { (float)GetScreenWidth() - 320, 130, 300, 420 };
                 DrawRectangleRec(winRect, LIGHTGRAY);
@@ -384,7 +510,7 @@ int main() {
                 }
             }
 
-            // Keybinds Setup Window (shifted down to Y=130 so it doesn't cover the 3rd button)
+            // Keybinds Setup Window
             if (showKeybindsWindow) {
                 Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 130, 300, 310 };
                 DrawRectangleRec(winKeyRect, LIGHTGRAY);
