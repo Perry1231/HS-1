@@ -25,6 +25,11 @@ struct ResolutionOption {
     int height;
 };
 
+struct FpsOption {
+    const char* label;
+    int value;
+};
+
 // Застосування роздільної здатності без блокування Alt+Tab
 void ApplyWindowResolution(int width, int height) {
     int monitor = GetCurrentMonitor();
@@ -32,13 +37,11 @@ void ApplyWindowResolution(int width, int height) {
     int monH = GetMonitorHeight(monitor);
 
     if (width >= 1920 || (width >= monW && height >= monH)) {
-        // Безрамковий повноекранний режим: перекриває панель завдань, але дозволяє Alt+Tab
         ClearWindowState(FLAG_WINDOW_TOPMOST);
         SetWindowState(FLAG_WINDOW_UNDECORATED);
         SetWindowSize(width, height);
         SetWindowPosition(0, 0);
     } else {
-        // Звичайне вікно з хрестиком та рамкою
         ClearWindowState(FLAG_WINDOW_UNDECORATED | FLAG_WINDOW_TOPMOST);
         SetWindowSize(width, height);
         SetWindowPosition(
@@ -49,6 +52,7 @@ void ApplyWindowResolution(int width, int height) {
 }
 
 int main() {
+    // --- 1. RESOLUTION OPTIONS ---
     ResolutionOption resolutions[] = {
         { "1280 x 720 (HD)",      1280, 720  },
         { "1366 x 768",           1366, 768  },
@@ -57,8 +61,29 @@ int main() {
     };
     const int totalResolutions = 4;
     int selectedResolution = 0;
-    bool showResolutionDropdown = false;
 
+    // --- 2. FPS OPTIONS ---
+    FpsOption fpsOptions[] = {
+        { "30 FPS (Power Save)", 30  },
+        { "60 FPS (Standard)",   60  },
+        { "120 FPS (Smooth)",    120 },
+        { "Unlimited (Max)",     0   }
+    };
+    const int totalFpsOptions = 4;
+    int selectedFps = 1; // 60 FPS за замовчуванням
+
+    // --- 3. COM PORT OPTIONS ---
+    const char* comPorts[] = {
+        "COM1", "COM2", "COM3", "COM4", "COM5",
+        "COM6", "COM7", "COM8", "COM9", "COM10"
+    };
+    const int totalComPorts = 10;
+    int selectedComPort = 2; // COM3 за замовчуванням
+
+    // Стан відкритих списків: -1 = всі закриті, 0 = Resolution, 1 = FPS, 2 = COM Port
+    int activeSettingsDropdown = -1;
+
+    // --- CUSTOMIZABLE KEYBINDS ---
     int keyForward = KEY_UP;
     int keyBackward = KEY_DOWN;
     int keyLeft = KEY_LEFT;
@@ -68,25 +93,24 @@ int main() {
 
     ChangeDirectory("C:/Users/Dell/Desktop/projetcs/GitHub Projects/HS-1/HS-1/HS-1_Programm");
 
+    // --- ЗАВАНТАЖЕННЯ НАЛАШТУВАНЬ ПРОГРАМИ ---
     std::ifstream progIn("program_settings.txt");
     if (progIn.is_open()) {
-        int savedRes = 0;
-        if (progIn >> savedRes >> keyForward >> keyBackward >> keyLeft >> keyRight >> keyUpCam >> keyDownCam) {
-            if (savedRes >= 0 && savedRes < totalResolutions) {
-                selectedResolution = savedRes;
-            }
+        int savedRes = 0, savedFps = 1, savedCom = 2;
+        if (progIn >> savedRes >> savedFps >> savedCom >> keyForward >> keyBackward >> keyLeft >> keyRight >> keyUpCam >> keyDownCam) {
+            if (savedRes >= 0 && savedRes < totalResolutions) selectedResolution = savedRes;
+            if (savedFps >= 0 && savedFps < totalFpsOptions)   selectedFps = savedFps;
+            if (savedCom >= 0 && savedCom < totalComPorts)     selectedComPort = savedCom;
         }
         progIn.close();
     }
 
     InitWindow(resolutions[selectedResolution].width, resolutions[selectedResolution].height, "HS-1 Exoskeleton - Full Body Configurator");
     ApplyWindowResolution(resolutions[selectedResolution].width, resolutions[selectedResolution].height);
-    SetTargetFPS(60);
-
-    // Вимикаємо закриття на ESC, щоб ESC тільки розблоковував курсор
+    SetTargetFPS(fpsOptions[selectedFps].value);
     SetExitKey(KEY_NULL);
 
-    // --- 1. LOAD ALL MODELS ---
+    // --- LOAD ALL 3D STL MODELS ---
     Model modelBicepsR   = LoadBinarySTL("Models/Biceps_2_0.stl");
     Model modelBody      = LoadBinarySTL("Models/Body_2_0.stl");
     Model modelForearmR  = LoadBinarySTL("Models/Forearm_2_0.stl");
@@ -230,8 +254,14 @@ int main() {
         if (isProgramSettingsMode) {
             // ================= PROGRAMM SETTINGS PAGE =================
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), DARKGRAY);
-            DrawText("PROGRAMM SETTINGS", 40, 30, 26, RAYWHITE);
-            DrawLine(40, 65, GetScreenWidth() - 40, 65, GRAY);
+            float cx = GetScreenWidth() / 2.0f;
+
+            // --- ЗАГОЛОВОК ПО ЦЕНТРУ ---
+            const char* titleText = "PROGRAMM SETTINGS";
+            int titleFontSize = 30;
+            int titleW = MeasureText(titleText, titleFontSize);
+            DrawText(titleText, (int)(cx - titleW / 2.0f), 30, titleFontSize, RAYWHITE);
+            DrawLine((int)(cx - 260), 70, (int)(cx + 260), 70, GRAY);
 
             // --- BACK BUTTON (TOP RIGHT) ---
             Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
@@ -244,26 +274,57 @@ int main() {
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
                 isProgramSettingsMode = false;
-                showResolutionDropdown = false;
+                activeSettingsDropdown = -1;
                 settingsSavedTimer = 0.0f;
             }
 
-            // --- 1. WINDOW RESOLUTION SETTING ---
-            DrawText("Window Resolution:", 40, 95, 18, RAYWHITE);
+            // Координати для 3 відцентрованих рядків налаштувань під заголовком
+            float labelX = cx - 230.0f;
+            float btnX   = cx + 10.0f;
+            float btnW   = 230.0f;
+            float btnH   = 36.0f;
 
-            Rectangle resBtnRect = { 240, 88, 220, 35 };
+            // --- РЯДОК 1: WINDOW RESOLUTION ---
+            float row1Y = 110.0f;
+            DrawText("Window Resolution:", (int)labelX, (int)row1Y + 9, 18, RAYWHITE);
+            Rectangle resBtnRect = { btnX, row1Y, btnW, btnH };
             bool resBtnHover = CheckCollisionPointRec(mousePos, resBtnRect);
             DrawRectangleRec(resBtnRect, resBtnHover ? LIGHTGRAY : WHITE);
             DrawRectangleLines((int)resBtnRect.x, (int)resBtnRect.y, (int)resBtnRect.width, (int)resBtnRect.height, BLACK);
-            
-            DrawText(TextFormat("%s  [v]", resolutions[selectedResolution].label), (int)resBtnRect.x + 12, (int)resBtnRect.y + 10, 14, BLACK);
+            DrawText(TextFormat("%s  [v]", resolutions[selectedResolution].label), (int)resBtnRect.x + 12, (int)resBtnRect.y + 11, 14, BLACK);
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && resBtnHover) {
-                showResolutionDropdown = !showResolutionDropdown;
+                activeSettingsDropdown = (activeSettingsDropdown == 0) ? -1 : 0;
             }
 
-            // --- 2. SAVE PROGRAM SETTINGS BUTTON ---
-            Rectangle btnSaveProgRect = { 40, (float)GetScreenHeight() - 75, 220, 42 };
+            // --- РЯДОК 2: TARGET FPS ---
+            float row2Y = 165.0f;
+            DrawText("Target Frame Rate:", (int)labelX, (int)row2Y + 9, 18, RAYWHITE);
+            Rectangle fpsBtnRect = { btnX, row2Y, btnW, btnH };
+            bool fpsBtnHover = CheckCollisionPointRec(mousePos, fpsBtnRect);
+            DrawRectangleRec(fpsBtnRect, fpsBtnHover ? LIGHTGRAY : WHITE);
+            DrawRectangleLines((int)fpsBtnRect.x, (int)fpsBtnRect.y, (int)fpsBtnRect.width, (int)fpsBtnRect.height, BLACK);
+            DrawText(TextFormat("%s  [v]", fpsOptions[selectedFps].label), (int)fpsBtnRect.x + 12, (int)fpsBtnRect.y + 11, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && fpsBtnHover) {
+                activeSettingsDropdown = (activeSettingsDropdown == 1) ? -1 : 1;
+            }
+
+            // --- РЯДОК 3: UART COM PORT ---
+            float row3Y = 220.0f;
+            DrawText("Telemetry COM Port:", (int)labelX, (int)row3Y + 9, 18, RAYWHITE);
+            Rectangle comBtnRect = { btnX, row3Y, btnW, btnH };
+            bool comBtnHover = CheckCollisionPointRec(mousePos, comBtnRect);
+            DrawRectangleRec(comBtnRect, comBtnHover ? LIGHTGRAY : WHITE);
+            DrawRectangleLines((int)comBtnRect.x, (int)comBtnRect.y, (int)comBtnRect.width, (int)comBtnRect.height, BLACK);
+            DrawText(TextFormat("%s (115200 baud)  [v]", comPorts[selectedComPort]), (int)comBtnRect.x + 12, (int)comBtnRect.y + 11, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && comBtnHover) {
+                activeSettingsDropdown = (activeSettingsDropdown == 2) ? -1 : 2;
+            }
+
+            // --- КНОПКА ЗБЕРЕЖЕННЯ ПО ЦЕНТРУ ВНИЗУ ---
+            Rectangle btnSaveProgRect = { cx - 120, (float)GetScreenHeight() - 80, 240, 42 };
             bool btnSaveProgHover = CheckCollisionPointRec(mousePos, btnSaveProgRect);
             DrawRectangleRec(btnSaveProgRect, btnSaveProgHover ? LIME : GREEN);
             DrawRectangleLines((int)btnSaveProgRect.x, (int)btnSaveProgRect.y, (int)btnSaveProgRect.width, (int)btnSaveProgRect.height, BLACK);
@@ -275,6 +336,8 @@ int main() {
                 std::ofstream progOut("program_settings.txt");
                 if (progOut.is_open()) {
                     progOut << selectedResolution << " "
+                            << selectedFps << " "
+                            << selectedComPort << " "
                             << keyForward << " " << keyBackward << " "
                             << keyLeft << " " << keyRight << " "
                             << keyUpCam << " " << keyDownCam << "\n";
@@ -284,14 +347,16 @@ int main() {
             }
 
             if (settingsSavedTimer > 0.0f) {
-                DrawText("Saved to program_settings.txt!", (int)btnSaveProgRect.x + 240, (int)btnSaveProgRect.y + 13, 16, GREEN);
+                const char* savedMsg = "Settings saved to program_settings.txt!";
+                int msgW = MeasureText(savedMsg, 16);
+                DrawText(savedMsg, (int)(cx - msgW / 2.0f), (int)btnSaveProgRect.y - 28, 16, GREEN);
             }
 
-            if (showResolutionDropdown) {
+            // --- ВІДОБРАЖЕННЯ АКТИВНОГО ВИПАДАЮЧОГО СПИСКУ (ПОВЕРХ ІНШИХ КНОПОК) ---
+            if (activeSettingsDropdown == 0) {
                 for (int i = 0; i < totalResolutions; i++) {
                     Rectangle itemRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height + (float)(i * 32), resBtnRect.width, 32 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
-                    
                     Color itemColor = (i == selectedResolution) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE);
                     DrawRectangleRec(itemRect, itemColor);
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
@@ -299,8 +364,37 @@ int main() {
 
                     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
                         selectedResolution = i;
-                        showResolutionDropdown = false;
+                        activeSettingsDropdown = -1;
                         ApplyWindowResolution(resolutions[i].width, resolutions[i].height);
+                    }
+                }
+            } else if (activeSettingsDropdown == 1) {
+                for (int i = 0; i < totalFpsOptions; i++) {
+                    Rectangle itemRect = { fpsBtnRect.x, fpsBtnRect.y + fpsBtnRect.height + (float)(i * 32), fpsBtnRect.width, 32 };
+                    bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
+                    Color itemColor = (i == selectedFps) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE);
+                    DrawRectangleRec(itemRect, itemColor);
+                    DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
+                    DrawText(fpsOptions[i].label, (int)itemRect.x + 12, (int)itemRect.y + 9, 14, BLACK);
+
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
+                        selectedFps = i;
+                        activeSettingsDropdown = -1;
+                        SetTargetFPS(fpsOptions[i].value);
+                    }
+                }
+            } else if (activeSettingsDropdown == 2) {
+                for (int i = 0; i < totalComPorts; i++) {
+                    Rectangle itemRect = { comBtnRect.x, comBtnRect.y + comBtnRect.height + (float)(i * 28), comBtnRect.width, 28 };
+                    bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
+                    Color itemColor = (i == selectedComPort) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE);
+                    DrawRectangleRec(itemRect, itemColor);
+                    DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
+                    DrawText(comPorts[i], (int)itemRect.x + 12, (int)itemRect.y + 7, 14, BLACK);
+
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
+                        selectedComPort = i;
+                        activeSettingsDropdown = -1;
                     }
                 }
             }
@@ -334,7 +428,7 @@ int main() {
             EndMode3D();
 
             DrawText("HS-1 Exoskeleton - Full Body Configurator", 10, 10, 20, RAYWHITE);
-            DrawText("Camera: Custom Keys | RMB + Drag | Alt+Tab to switch", 10, 35, 14, LIGHTGRAY);
+            DrawText(TextFormat("Port: %s | FPS Target: %i | Alt+Tab to switch", comPorts[selectedComPort], fpsOptions[selectedFps].value), 10, 35, 14, LIGHTGRAY);
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
             Rectangle btnTo2D = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
@@ -602,7 +696,7 @@ int main() {
                 DrawText(layout[i].label, (int)(layout[i].rect.x + (layout[i].rect.width - textWidth) / 2), (int)(layout[i].rect.y + 18), 10, textColor);
             }
 
-            // --- BACK TO 3D BUTTON (MATCHED HEIGHT & SIZE WITH 2D BUTTON) ---
+            // --- BACK TO 3D BUTTON ---
             Rectangle btnBackTo3D = { cx - 110, (float)GetScreenHeight() - 60, 220, 40 };
             bool btnBackHover = CheckCollisionPointRec(mousePos, btnBackTo3D);
             DrawRectangleRec(btnBackTo3D, btnBackHover ? ORANGE : DARKGRAY);
