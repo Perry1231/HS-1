@@ -30,7 +30,6 @@ struct FpsOption {
     int value;
 };
 
-// Застосування роздільної здатності без блокування Alt+Tab
 void ApplyWindowResolution(int width, int height) {
     int monitor = GetCurrentMonitor();
     int monW = GetMonitorWidth(monitor);
@@ -70,7 +69,7 @@ int main() {
         { "Unlimited (Max)",     0   }
     };
     const int totalFpsOptions = 4;
-    int selectedFps = 1; // 60 FPS за замовчуванням
+    int selectedFps = 1;
 
     // --- 3. COM PORT OPTIONS ---
     const char* comPorts[] = {
@@ -78,9 +77,18 @@ int main() {
         "COM6", "COM7", "COM8", "COM9", "COM10"
     };
     const int totalComPorts = 10;
-    int selectedComPort = 2; // COM3 за замовчуванням
+    int selectedComPort = 2; // COM3
 
-    // Стан відкритих списків: -1 = всі закриті, 0 = Resolution, 1 = FPS, 2 = COM Port
+    // --- 4. BAUD RATE OPTIONS (ЧАСТИНА 2) ---
+    const int baudRates[] = { 115200, 230400, 460800, 921600 };
+    const int totalBaudRates = 4;
+    int selectedBaudRate = 0; // 115200
+
+    // --- 5. GRAPHICS TOGGLES (ЧАСТИНА 2) ---
+    bool showGroundGrid = true;
+    bool showModelWireframe = true;
+
+    // Стан відкритих списків: -1 = закриті, 0 = Resolution, 1 = FPS, 2 = COM Port, 3 = Baud Rate
     int activeSettingsDropdown = -1;
 
     // --- CUSTOMIZABLE KEYBINDS ---
@@ -96,11 +104,16 @@ int main() {
     // --- ЗАВАНТАЖЕННЯ НАЛАШТУВАНЬ ПРОГРАМИ ---
     std::ifstream progIn("program_settings.txt");
     if (progIn.is_open()) {
-        int savedRes = 0, savedFps = 1, savedCom = 2;
-        if (progIn >> savedRes >> savedFps >> savedCom >> keyForward >> keyBackward >> keyLeft >> keyRight >> keyUpCam >> keyDownCam) {
+        int savedRes = 0, savedFps = 1, savedCom = 2, savedBaud = 0;
+        int savedGrid = 1, savedWire = 1;
+        if (progIn >> savedRes >> savedFps >> savedCom >> savedBaud >> savedGrid >> savedWire
+                   >> keyForward >> keyBackward >> keyLeft >> keyRight >> keyUpCam >> keyDownCam) {
             if (savedRes >= 0 && savedRes < totalResolutions) selectedResolution = savedRes;
             if (savedFps >= 0 && savedFps < totalFpsOptions)   selectedFps = savedFps;
             if (savedCom >= 0 && savedCom < totalComPorts)     selectedComPort = savedCom;
+            if (savedBaud >= 0 && savedBaud < totalBaudRates)  selectedBaudRate = savedBaud;
+            showGroundGrid = (savedGrid != 0);
+            showModelWireframe = (savedWire != 0);
         }
         progIn.close();
     }
@@ -163,6 +176,7 @@ int main() {
     bool isProgramSettingsMode = false;
     bool shouldExitApp = false;
     float settingsSavedTimer = 0.0f;
+    float sensorsZeroedTimer = 0.0f;
     
     bool bodyConnected[13] = { false }; 
 
@@ -191,9 +205,8 @@ int main() {
     bool cursorUnlocked = false;
 
     while (!WindowShouldClose() && !shouldExitApp) {
-        if (settingsSavedTimer > 0.0f) {
-            settingsSavedTimer -= GetFrameTime();
-        }
+        if (settingsSavedTimer > 0.0f) settingsSavedTimer -= GetFrameTime();
+        if (sensorsZeroedTimer > 0.0f) sensorsZeroedTimer -= GetFrameTime();
 
         if (IsKeyPressed(KEY_ESCAPE)) {
             cursorUnlocked = !cursorUnlocked;
@@ -261,7 +274,7 @@ int main() {
             int titleFontSize = 30;
             int titleW = MeasureText(titleText, titleFontSize);
             DrawText(titleText, (int)(cx - titleW / 2.0f), 30, titleFontSize, RAYWHITE);
-            DrawLine((int)(cx - 260), 70, (int)(cx + 260), 70, GRAY);
+            DrawLine((int)(cx - 280), 70, (int)(cx + 280), 70, GRAY);
 
             // --- BACK BUTTON (TOP RIGHT) ---
             Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
@@ -276,16 +289,17 @@ int main() {
                 isProgramSettingsMode = false;
                 activeSettingsDropdown = -1;
                 settingsSavedTimer = 0.0f;
+                sensorsZeroedTimer = 0.0f;
             }
 
-            // Координати для 3 відцентрованих рядків налаштувань під заголовком
-            float labelX = cx - 230.0f;
+            float labelX = cx - 240.0f;
             float btnX   = cx + 10.0f;
             float btnW   = 230.0f;
             float btnH   = 36.0f;
 
-            // --- РЯДОК 1: WINDOW RESOLUTION ---
-            float row1Y = 110.0f;
+            // --- ЧАСТИНА 1: СИСТЕМНІ ТА ВІКОННІ НАЛАШТУВАННЯ ---
+            // 1. WINDOW RESOLUTION
+            float row1Y = 95.0f;
             DrawText("Window Resolution:", (int)labelX, (int)row1Y + 9, 18, RAYWHITE);
             Rectangle resBtnRect = { btnX, row1Y, btnW, btnH };
             bool resBtnHover = CheckCollisionPointRec(mousePos, resBtnRect);
@@ -297,8 +311,8 @@ int main() {
                 activeSettingsDropdown = (activeSettingsDropdown == 0) ? -1 : 0;
             }
 
-            // --- РЯДОК 2: TARGET FPS ---
-            float row2Y = 165.0f;
+            // 2. TARGET FPS
+            float row2Y = 145.0f;
             DrawText("Target Frame Rate:", (int)labelX, (int)row2Y + 9, 18, RAYWHITE);
             Rectangle fpsBtnRect = { btnX, row2Y, btnW, btnH };
             bool fpsBtnHover = CheckCollisionPointRec(mousePos, fpsBtnRect);
@@ -310,21 +324,86 @@ int main() {
                 activeSettingsDropdown = (activeSettingsDropdown == 1) ? -1 : 1;
             }
 
-            // --- РЯДОК 3: UART COM PORT ---
-            float row3Y = 220.0f;
+            // 3. TELEMETRY COM PORT
+            float row3Y = 195.0f;
             DrawText("Telemetry COM Port:", (int)labelX, (int)row3Y + 9, 18, RAYWHITE);
             Rectangle comBtnRect = { btnX, row3Y, btnW, btnH };
             bool comBtnHover = CheckCollisionPointRec(mousePos, comBtnRect);
             DrawRectangleRec(comBtnRect, comBtnHover ? LIGHTGRAY : WHITE);
             DrawRectangleLines((int)comBtnRect.x, (int)comBtnRect.y, (int)comBtnRect.width, (int)comBtnRect.height, BLACK);
-            DrawText(TextFormat("%s (115200 baud)  [v]", comPorts[selectedComPort]), (int)comBtnRect.x + 12, (int)comBtnRect.y + 11, 14, BLACK);
+            DrawText(TextFormat("%s  [v]", comPorts[selectedComPort]), (int)comBtnRect.x + 12, (int)comBtnRect.y + 11, 14, BLACK);
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && comBtnHover) {
                 activeSettingsDropdown = (activeSettingsDropdown == 2) ? -1 : 2;
             }
 
+            // --- ЧАСТИНА 2: ЗВ'ЯЗОК, ГРАФІКА ТА КАЛІБРУВАННЯ ---
+            DrawLine((int)(cx - 260), 250, (int)(cx + 260), 250, GRAY);
+
+            // 4. UART BAUD RATE
+            float row4Y = 270.0f;
+            DrawText("UART Baud Rate:", (int)labelX, (int)row4Y + 9, 18, RAYWHITE);
+            Rectangle baudBtnRect = { btnX, row4Y, btnW, btnH };
+            bool baudBtnHover = CheckCollisionPointRec(mousePos, baudBtnRect);
+            DrawRectangleRec(baudBtnRect, baudBtnHover ? LIGHTGRAY : WHITE);
+            DrawRectangleLines((int)baudBtnRect.x, (int)baudBtnRect.y, (int)baudBtnRect.width, (int)baudBtnRect.height, BLACK);
+            DrawText(TextFormat("%i baud  [v]", baudRates[selectedBaudRate]), (int)baudBtnRect.x + 12, (int)baudBtnRect.y + 11, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && baudBtnHover) {
+                activeSettingsDropdown = (activeSettingsDropdown == 3) ? -1 : 3;
+            }
+
+            // 5. 3D SCENE OVERLAYS (GRID & WIREFRAME TOGGLES)
+            float row5Y = 325.0f;
+            DrawText("3D Scene Overlays:", (int)labelX, (int)row5Y + 9, 18, RAYWHITE);
+
+            Rectangle gridBtnRect = { btnX, row5Y, 110, btnH };
+            bool gridBtnHover = CheckCollisionPointRec(mousePos, gridBtnRect);
+            DrawRectangleRec(gridBtnRect, showGroundGrid ? (gridBtnHover ? LIME : GREEN) : (gridBtnHover ? GRAY : LIGHTGRAY));
+            DrawRectangleLines((int)gridBtnRect.x, (int)gridBtnRect.y, (int)gridBtnRect.width, (int)gridBtnRect.height, BLACK);
+            DrawText(showGroundGrid ? "Grid: ON" : "Grid: OFF", (int)gridBtnRect.x + 20, (int)gridBtnRect.y + 11, 13, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && gridBtnHover && activeSettingsDropdown == -1) {
+                showGroundGrid = !showGroundGrid;
+            }
+
+            Rectangle wireBtnRect = { btnX + 120, row5Y, 110, btnH };
+            bool wireBtnHover = CheckCollisionPointRec(mousePos, wireBtnRect);
+            DrawRectangleRec(wireBtnRect, showModelWireframe ? (wireBtnHover ? LIME : GREEN) : (wireBtnHover ? GRAY : LIGHTGRAY));
+            DrawRectangleLines((int)wireBtnRect.x, (int)wireBtnRect.y, (int)wireBtnRect.width, (int)wireBtnRect.height, BLACK);
+            DrawText(showModelWireframe ? "Wires: ON" : "Wires: OFF", (int)wireBtnRect.x + 16, (int)wireBtnRect.y + 11, 13, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && wireBtnHover && activeSettingsDropdown == -1) {
+                showModelWireframe = !showModelWireframe;
+            }
+
+            // 6. CALIBRATION (ZERO / TARE ALL SENSORS)
+            float row6Y = 380.0f;
+            DrawText("Sensors Calibration:", (int)labelX, (int)row6Y + 9, 18, RAYWHITE);
+
+            Rectangle zeroBtnRect = { btnX, row6Y, btnW, btnH };
+            bool zeroBtnHover = CheckCollisionPointRec(mousePos, zeroBtnRect);
+            DrawRectangleRec(zeroBtnRect, zeroBtnHover ? GOLD : ORANGE);
+            DrawRectangleLines((int)zeroBtnRect.x, (int)zeroBtnRect.y, (int)zeroBtnRect.width, (int)zeroBtnRect.height, BLACK);
+            DrawText("Zero / Tare All Sensors", (int)zeroBtnRect.x + 26, (int)zeroBtnRect.y + 11, 14, BLACK);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && zeroBtnHover && activeSettingsDropdown == -1) {
+                for (int i = 0; i < totalParts; i++) {
+                    parts[i].rotX = parts[i].defaultRotX;
+                    parts[i].rotY = parts[i].defaultRotY;
+                    parts[i].rotZ = parts[i].defaultRotZ;
+                }
+                sensorsZeroedTimer = 2.5f;
+            }
+
+            if (sensorsZeroedTimer > 0.0f) {
+                const char* zeroMsg = "All 13 sensor angles reset to zero!";
+                int zW = MeasureText(zeroMsg, 15);
+                DrawText(zeroMsg, (int)(cx - zW / 2.0f), (int)row6Y + 46, 15, YELLOW);
+            }
+
             // --- КНОПКА ЗБЕРЕЖЕННЯ ПО ЦЕНТРУ ВНИЗУ ---
-            Rectangle btnSaveProgRect = { cx - 120, (float)GetScreenHeight() - 80, 240, 42 };
+            Rectangle btnSaveProgRect = { cx - 120, (float)GetScreenHeight() - 75, 240, 42 };
             bool btnSaveProgHover = CheckCollisionPointRec(mousePos, btnSaveProgRect);
             DrawRectangleRec(btnSaveProgRect, btnSaveProgHover ? LIME : GREEN);
             DrawRectangleLines((int)btnSaveProgRect.x, (int)btnSaveProgRect.y, (int)btnSaveProgRect.width, (int)btnSaveProgRect.height, BLACK);
@@ -338,6 +417,9 @@ int main() {
                     progOut << selectedResolution << " "
                             << selectedFps << " "
                             << selectedComPort << " "
+                            << selectedBaudRate << " "
+                            << (showGroundGrid ? 1 : 0) << " "
+                            << (showModelWireframe ? 1 : 0) << " "
                             << keyForward << " " << keyBackward << " "
                             << keyLeft << " " << keyRight << " "
                             << keyUpCam << " " << keyDownCam << "\n";
@@ -349,10 +431,10 @@ int main() {
             if (settingsSavedTimer > 0.0f) {
                 const char* savedMsg = "Settings saved to program_settings.txt!";
                 int msgW = MeasureText(savedMsg, 16);
-                DrawText(savedMsg, (int)(cx - msgW / 2.0f), (int)btnSaveProgRect.y - 28, 16, GREEN);
+                DrawText(savedMsg, (int)(cx - msgW / 2.0f), (int)btnSaveProgRect.y - 26, 16, GREEN);
             }
 
-            // --- ВІДОБРАЖЕННЯ АКТИВНОГО ВИПАДАЮЧОГО СПИСКУ (ПОВЕРХ ІНШИХ КНОПОК) ---
+            // --- ВІДОБРАЖЕННЯ АКТИВНОГО ВИПАДАЮЧОГО СПИСКУ ПОВЕРХ УСІХ ЕЛЕМЕНТІВ ---
             if (activeSettingsDropdown == 0) {
                 for (int i = 0; i < totalResolutions; i++) {
                     Rectangle itemRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height + (float)(i * 32), resBtnRect.width, 32 };
@@ -397,12 +479,28 @@ int main() {
                         activeSettingsDropdown = -1;
                     }
                 }
+            } else if (activeSettingsDropdown == 3) {
+                for (int i = 0; i < totalBaudRates; i++) {
+                    Rectangle itemRect = { baudBtnRect.x, baudBtnRect.y + baudBtnRect.height + (float)(i * 32), baudBtnRect.width, 32 };
+                    bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
+                    Color itemColor = (i == selectedBaudRate) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE);
+                    DrawRectangleRec(itemRect, itemColor);
+                    DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
+                    DrawText(TextFormat("%i baud", baudRates[i]), (int)itemRect.x + 12, (int)itemRect.y + 9, 14, BLACK);
+
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
+                        selectedBaudRate = i;
+                        activeSettingsDropdown = -1;
+                    }
+                }
             }
 
         } else if (!is2DMode) {
             // ================= 3D MODE =================
             BeginMode3D(camera);
-                DrawGrid(50, 10.0f);
+                if (showGroundGrid) {
+                    DrawGrid(50, 10.0f);
+                }
 
                 Model* models[13] = { 
                     &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
@@ -421,14 +519,16 @@ int main() {
                             rlRotatef(parts[i].rotY, 0.0f, 1.0f, 0.0f);
                             rlRotatef(parts[i].rotZ, 0.0f, 0.0f, 1.0f);
                             DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
-                            DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
+                            if (showModelWireframe) {
+                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
+                            }
                         rlPopMatrix();
                     }
                 }
             EndMode3D();
 
             DrawText("HS-1 Exoskeleton - Full Body Configurator", 10, 10, 20, RAYWHITE);
-            DrawText(TextFormat("Port: %s | FPS Target: %i | Alt+Tab to switch", comPorts[selectedComPort], fpsOptions[selectedFps].value), 10, 35, 14, LIGHTGRAY);
+            DrawText(TextFormat("%s @ %i baud | FPS Target: %i | Alt+Tab to switch", comPorts[selectedComPort], baudRates[selectedBaudRate], fpsOptions[selectedFps].value), 10, 35, 14, LIGHTGRAY);
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
             Rectangle btnTo2D = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
