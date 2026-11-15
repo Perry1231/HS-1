@@ -19,3 +19,4 @@ CPackSourceConfig.cmake
 .vscode/
 .vs/
 *.user
+.history/
