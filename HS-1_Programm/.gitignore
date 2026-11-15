@@ -1,0 +1,21 @@
+# CMake and build artifacts
+build/
+_deps/
+.cmake/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+compile_commands.json
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# Compiled object files and executables
+*.exe
+*.o
+*.obj
+
+# System files and IDE files
+.vscode/
+.vs/
+*.user
