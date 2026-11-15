@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <string>
 
 struct PartTransform {
     Vector3 defaultPos;
@@ -41,6 +42,33 @@ struct ThemeOption {
     Color gridColor;
 };
 
+// Automatically locate the folder containing "Models/" relative to the executable
+bool SetupPortableWorkingDirectory() {
+    const char* appDir = GetApplicationDirectory();
+    if (appDir != nullptr) {
+        ChangeDirectory(appDir);
+    }
+
+    // 1. Check if "Models" exists right next to the .exe
+    if (DirectoryExists("Models")) {
+        return true;
+    }
+
+    // 2. Check one level up (e.g., if .exe is inside /bin or /build)
+    if (DirectoryExists("../Models")) {
+        ChangeDirectory("..");
+        return true;
+    }
+
+    // 3. Check two levels up (e.g., /build/Release)
+    if (DirectoryExists("../../Models")) {
+        ChangeDirectory("../..");
+        return true;
+    }
+
+    return false;
+}
+
 // Apply window resolution without blocking Alt+Tab switching
 void ApplyWindowResolution(int width, int height) {
     int monitor = GetCurrentMonitor();
@@ -63,6 +91,9 @@ void ApplyWindowResolution(int width, int height) {
 }
 
 int main() {
+    // Locate portable repository directory before loading configs or models
+    bool modelsDirFound = SetupPortableWorkingDirectory();
+
     // --- PART 1: SYSTEM & WINDOW SETTINGS ---
     ResolutionOption resolutions[] = {
         { "1280 x 720 (HD)",      1280, 720  },
@@ -126,10 +157,10 @@ int main() {
 
     // --- PART 4: SCENE THEME, SIMULATION & AUTO-RECONNECT ---
     ThemeOption themes[] = {
-        { "Dark Gray (Default)", DARKGRAY,                   LIGHTGRAY },
-        { "Pure Black (OLED)",   BLACK,                      DARKGRAY  },
-        { "Blueprint CAD",       (Color){ 18, 42, 76, 255 }, SKYBLUE   },
-        { "Light Studio",        (Color){ 215, 220, 225, 255 }, GRAY   }
+        { "Dark Gray (Default)", DARKGRAY,                    LIGHTGRAY },
+        { "Pure Black (OLED)",   BLACK,                       DARKGRAY  },
+        { "Blueprint CAD",       (Color){ 18, 42, 76, 255 },  SKYBLUE   },
+        { "Light Studio",        (Color){ 215, 220, 225, 255 }, GRAY    }
     };
     const int totalThemes = 4;
     int selectedTheme = 0;
@@ -149,9 +180,7 @@ int main() {
     int keyUpCam = KEY_LEFT_SHIFT;
     int keyDownCam = KEY_LEFT_CONTROL;
 
-    ChangeDirectory("C:/Users/Dell/Desktop/projetcs/GitHub Projects/HS-1/HS-1/HS-1_Programm");
-
-    // --- LOAD PROGRAM SETTINGS FROM FILE ---
+    // --- LOAD PROGRAM SETTINGS FROM LOCAL FILE ---
     std::ifstream progIn("program_settings.txt");
     if (progIn.is_open()) {
         int savedRes = 0, savedFps = 1, savedCom = 2, savedBaud = 0;
@@ -207,6 +236,11 @@ int main() {
         modelHandL.meshCount > 0, modelFootL.meshCount > 0, modelLegHighL.meshCount > 0,
         modelLegLowL.meshCount > 0
     };
+
+    int loadedModelsCount = 0;
+    for (int i = 0; i < totalParts; i++) {
+        if (isLoaded[i]) loadedModelsCount++;
+    }
     
     PartTransform parts[13] = {
         { {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f,   {0.0f, 20.0f, 0.0f}, 0.0f, 0.0f, 0.0f, 0.05f },
@@ -243,7 +277,7 @@ int main() {
     bool showDropdownList = false;
     int waitingForKeyIndex = -1;
 
-    // Load saved 3D part transforms
+    // Load saved 3D part transforms from local folder
     std::ifstream inFile("exoskeleton_config.txt");
     if (inFile.is_open()) {
         for (int i = 0; i < totalParts; i++) {
@@ -740,9 +774,16 @@ int main() {
             EndMode3D();
 
             DrawText("HS-1 Exoskeleton - Full Body Configurator", 10, 10, 20, hudTextColor);
-            DrawText(TextFormat("%s @ %i baud | Mode: %s | Smooth: %.0f%%", 
+            DrawText(TextFormat("%s @ %i baud | Mode: %s | Models: %i/13", 
                 comPorts[selectedComPort], baudRates[selectedBaudRate],
-                demoWaveMode ? "DEMO" : "UART", smoothingOptions[selectedSmoothing].value * 100.0f), 10, 35, 14, hudSubColor);
+                demoWaveMode ? "DEMO" : "UART", loadedModelsCount), 10, 35, 14, hudSubColor);
+
+            // Warning banner if Models/ folder was not found in portable directory
+            if (!modelsDirFound || loadedModelsCount == 0) {
+                DrawRectangle(10, 60, 490, 26, MAROON);
+                DrawRectangleLines(10, 60, 490, 26, RED);
+                DrawText("WARNING: 'Models/' folder not found next to HS1_App.exe!", 20, 66, 13, RAYWHITE);
+            }
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
             Rectangle btnTo2D = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
@@ -964,10 +1005,10 @@ int main() {
             Color infoColor = (selectedTheme == 3) ? DARKBLUE : YELLOW;
             Color valColor  = (selectedTheme == 3) ? DARKGREEN : GREEN;
 
-            DrawText(TextFormat("Selected: %s", partNames[selectedPart]), 10, 90, 15, infoColor);
-            DrawText(TextFormat("Pos: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 110, 15, valColor);
-            DrawText(TextFormat("Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 130, 15, valColor);
-            DrawText(TextFormat("Scale: %.4f", parts[selectedPart].scale), 10, 150, 15, valColor);
+            DrawText(TextFormat("Selected: %s", partNames[selectedPart]), 10, 95, 15, infoColor);
+            DrawText(TextFormat("Pos: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 115, 15, valColor);
+            DrawText(TextFormat("Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 135, 15, valColor);
+            DrawText(TextFormat("Scale: %.4f", parts[selectedPart].scale), 10, 155, 15, valColor);
 
         } else {
             // ================= 2D FULLSCREEN BODY MAP MODE =================
