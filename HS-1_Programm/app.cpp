@@ -321,7 +321,6 @@ int main() {
         }
         inFile.close();
 
-        // Restore exact saved world pose while keeping parent-child joint offsets
         for (int i = 0; i < totalParts; i++) {
             parts[i].sensorRotX = 0.0f;
             parts[i].sensorRotY = 0.0f;
@@ -345,6 +344,7 @@ int main() {
 
     bool showControlWindow = false;
     bool showKeybindsWindow = false;
+    bool showHelpWindow = false;
     bool cursorUnlocked = false;
 
     while (!WindowShouldClose() && !shouldExitApp) {
@@ -356,14 +356,11 @@ int main() {
             float shoulderWave = sinf(t) * 25.0f;
             float elbowWave    = (sinf(t - 0.6f) + 1.0f) * 20.0f;
 
-            // Right arm chain
             parts[0].sensorRotX = -shoulderWave;
             parts[2].sensorRotX = -elbowWave;
-            // Left arm chain
             parts[7].sensorRotX =  shoulderWave;
             parts[8].sensorRotX = -elbowWave;
 
-            // Legs subtle walking motion
             parts[5].sensorRotX  =  shoulderWave * 0.5f;
             parts[6].sensorRotX  =  fabsf(shoulderWave) * 0.6f;
             parts[11].sensorRotX = -shoulderWave * 0.5f;
@@ -372,10 +369,24 @@ int main() {
             for (int i = 0; i < 13; i++) bodyConnected[i] = true;
         }
 
+        // Toggle Help overlay with F1
+        if (!isProgramSettingsMode && IsKeyPressed(KEY_F1)) {
+            showHelpWindow = !showHelpWindow;
+            if (showHelpWindow) {
+                showControlWindow = false;
+                showKeybindsWindow = false;
+                showDropdownList = false;
+            }
+        }
+
         if (IsKeyPressed(KEY_ESCAPE)) {
-            cursorUnlocked = !cursorUnlocked;
-            if (cursorUnlocked) EnableCursor();
-            else DisableCursor();
+            if (showHelpWindow) {
+                showHelpWindow = false;
+            } else {
+                cursorUnlocked = !cursorUnlocked;
+                if (cursorUnlocked) EnableCursor();
+                else DisableCursor();
+            }
         }
 
         Vector2 mousePos = GetMousePosition();
@@ -396,7 +407,7 @@ int main() {
         }
 
         // Camera movement logic
-        if (!is2DMode && !isProgramSettingsMode && !showControlWindow && !showKeybindsWindow && waitingForKeyIndex == -1) {
+        if (!is2DMode && !isProgramSettingsMode && !showControlWindow && !showKeybindsWindow && !showHelpWindow && waitingForKeyIndex == -1) {
             float camSpeed = camSpeedOptions[selectedCamSpeed].value;
             Vector3 forward = { camera.target.x - camera.position.x, 0.0f, camera.target.z - camera.position.z };
             float forwardLen = sqrtf(forward.x * forward.x + forward.z * forward.z);
@@ -412,16 +423,16 @@ int main() {
             if (IsKeyDown(keyUpCam))   { camera.position.y += camSpeed; camera.target.y += camSpeed; }
         }
 
-        if (!is2DMode && !isProgramSettingsMode && IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+        if (!is2DMode && !isProgramSettingsMode && !showHelpWindow && IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
             UpdateCamera(&camera, CAMERA_FREE);
         }
 
-        if (!isProgramSettingsMode && IsKeyPressed(KEY_R)) {
+        if (!isProgramSettingsMode && !showHelpWindow && IsKeyPressed(KEY_R)) {
             camera.position = (Vector3){ 0.0f, 30.0f, 150.0f };
             camera.target = (Vector3){ 0.0f, 20.0f, 0.0f };
         }
 
-        if (!is2DMode && !isProgramSettingsMode) {
+        if (!is2DMode && !isProgramSettingsMode && !showHelpWindow) {
             if (IsKeyDown(KEY_KP_ADD) || IsKeyDown(KEY_EQUAL))      parts[selectedPart].scale += 0.001f;
             if (IsKeyDown(KEY_KP_SUBTRACT) || IsKeyDown(KEY_MINUS)) parts[selectedPart].scale -= 0.001f;
         }
@@ -800,6 +811,7 @@ int main() {
                 is2DMode = true;
                 showControlWindow = false;
                 showKeybindsWindow = false;
+                showHelpWindow = false;
             }
 
             // --- EXIT APP BUTTON (BOTTOM RIGHT) ---
@@ -819,7 +831,7 @@ int main() {
             DrawRectangleLines((int)btnOpenRect.x, (int)btnOpenRect.y, (int)btnOpenRect.width, (int)btnOpenRect.height, BLACK);
             DrawText("Part Controls", (int)btnOpenRect.x + 25, (int)btnOpenRect.y + 8, 14, BLACK);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnOpenHover) {
-                showControlWindow = !showControlWindow; showKeybindsWindow = false; showDropdownList = false;
+                showControlWindow = !showControlWindow; showKeybindsWindow = false; showHelpWindow = false; showDropdownList = false;
             }
 
             Rectangle btnKeybindsRect = { (float)GetScreenWidth() - 180, 50, 170, 30 };
@@ -828,7 +840,7 @@ int main() {
             DrawRectangleLines((int)btnKeybindsRect.x, (int)btnKeybindsRect.y, (int)btnKeybindsRect.width, (int)btnKeybindsRect.height, BLACK);
             DrawText("Keybinds Setup", (int)btnKeybindsRect.x + 28, (int)btnKeybindsRect.y + 8, 14, BLACK);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnKeybindsHover) {
-                showKeybindsWindow = !showKeybindsWindow; showControlWindow = false;
+                showKeybindsWindow = !showKeybindsWindow; showControlWindow = false; showHelpWindow = false;
             }
 
             Rectangle btnProgSettingsRect = { (float)GetScreenWidth() - 180, 90, 170, 30 };
@@ -837,7 +849,7 @@ int main() {
             DrawRectangleLines((int)btnProgSettingsRect.x, (int)btnProgSettingsRect.y, (int)btnProgSettingsRect.width, (int)btnProgSettingsRect.height, BLACK);
             DrawText("Programm Settings", (int)btnProgSettingsRect.x + 18, (int)btnProgSettingsRect.y + 8, 14, BLACK);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnProgSettingsHover) {
-                isProgramSettingsMode = true; showControlWindow = false; showKeybindsWindow = false; showDropdownList = false;
+                isProgramSettingsMode = true; showControlWindow = false; showKeybindsWindow = false; showHelpWindow = false; showDropdownList = false;
             }
 
             // Toggle Joint Skeleton Overlay Button
@@ -850,9 +862,25 @@ int main() {
                 showJointPivots = !showJointPivots;
             }
 
+            // --- 5. HELP BUTTON (UNDER SKELETON BONES BUTTON) ---
+            Rectangle btnHelpRect = { (float)GetScreenWidth() - 180, 164, 170, 28 };
+            bool btnHelpHover = CheckCollisionPointRec(mousePos, btnHelpRect);
+            DrawRectangleRec(btnHelpRect, showHelpWindow ? SKYBLUE : (btnHelpHover ? LIGHTGRAY : BLUE));
+            DrawRectangleLines((int)btnHelpRect.x, (int)btnHelpRect.y, (int)btnHelpRect.width, (int)btnHelpRect.height, BLACK);
+            int helpTxtW = MeasureText("Help [F1]", 13);
+            DrawText("Help [F1]", (int)(btnHelpRect.x + (btnHelpRect.width - helpTxtW) / 2), (int)btnHelpRect.y + 8, 13, showHelpWindow ? BLACK : RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnHelpHover) {
+                showHelpWindow = !showHelpWindow;
+                if (showHelpWindow) {
+                    showControlWindow = false;
+                    showKeybindsWindow = false;
+                    showDropdownList = false;
+                }
+            }
+
             // Part Controls Window
             if (showControlWindow) {
-                Rectangle winRect = { (float)GetScreenWidth() - 320, 165, 300, 390 };
+                Rectangle winRect = { (float)GetScreenWidth() - 320, 200, 300, 390 };
                 DrawRectangleRec(winRect, LIGHTGRAY);
                 DrawRectangleLines((int)winRect.x, (int)winRect.y, (int)winRect.width, (int)winRect.height, BLACK);
                 
@@ -934,7 +962,6 @@ int main() {
                     std::ofstream outFile("exoskeleton_config.txt");
                     if (outFile.is_open()) {
                         for (int i = 0; i < totalParts; i++) {
-                            // Save world coordinates so config remains compatible
                             Matrix jMat = GetPartJointMatrix(i, parts, parentIndex);
                             outFile << jMat.m12 << " " << jMat.m13 << " " << jMat.m14 << " " 
                                     << parts[i].rotX << " " << parts[i].rotY << " " << parts[i].rotZ << " " << parts[i].scale << "\n";
@@ -961,7 +988,7 @@ int main() {
 
             // Keybinds Setup Window
             if (showKeybindsWindow) {
-                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 165, 300, 310 };
+                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 200, 300, 310 };
                 DrawRectangleRec(winKeyRect, LIGHTGRAY);
                 DrawRectangleLines((int)winKeyRect.x, (int)winKeyRect.y, (int)winKeyRect.width, (int)winKeyRect.height, BLACK);
                 
@@ -1008,6 +1035,86 @@ int main() {
             DrawText(TextFormat("Local Offset: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 135, 15, valColor);
             DrawText(TextFormat("Mount Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 155, 15, valColor);
             DrawText(TextFormat("Sensor Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].sensorRotX, parts[selectedPart].sensorRotY, parts[selectedPart].sensorRotZ), 10, 175, 15, valColor);
+
+            // ================= HELP MODAL WINDOW OVERLAY =================
+            if (showHelpWindow) {
+                // Dim background slightly for readability
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 0, 0, 0, 150 });
+
+                float modalW = 760.0f;
+                float modalH = 510.0f;
+                float modalX = (GetScreenWidth() - modalW) / 2.0f;
+                float modalY = (GetScreenHeight() - modalH) / 2.0f;
+
+                DrawRectangle((int)modalX, (int)modalY, (int)modalW, (int)modalH, (Color){ 32, 36, 42, 255 });
+                DrawRectangleLines((int)modalX, (int)modalY, (int)modalW, (int)modalH, SKYBLUE);
+
+                // Modal Header Bar
+                DrawRectangle((int)modalX, (int)modalY, (int)modalW, 38, (Color){ 20, 60, 100, 255 });
+                DrawText("HS-1 EXOSKELETON - USER GUIDE & SYSTEM OVERVIEW", (int)modalX + 16, (int)modalY + 10, 17, RAYWHITE);
+
+                Rectangle btnCloseHelp = { modalX + modalW - 34, modalY + 6, 26, 26 };
+                bool closeHelpHover = CheckCollisionPointRec(mousePos, btnCloseHelp);
+                DrawRectangleRec(btnCloseHelp, closeHelpHover ? RED : MAROON);
+                DrawRectangleLines((int)btnCloseHelp.x, (int)btnCloseHelp.y, (int)btnCloseHelp.width, (int)btnCloseHelp.height, RAYWHITE);
+                DrawText("X", (int)btnCloseHelp.x + 8, (int)btnCloseHelp.y + 5, 15, RAYWHITE);
+                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && closeHelpHover) {
+                    showHelpWindow = false;
+                }
+
+                float tx = modalX + 22.0f;
+                float ty = modalY + 52.0f;
+
+                // Section 1: About the System
+                DrawText("1. ABOUT HS-1 FULL-BODY TELEMETRY CONFIGURATOR", (int)tx, (int)ty, 15, SKYBLUE);
+                ty += 22.0f;
+                DrawText("- Real-time 3D kinematic visualizer for the 13-node HS-1 motion tracking suit.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Hardware nodes: ESP32-C3 SuperMini + BNO055 9-DOF IMU sensors over UART.", (int)tx + 10, (int)ty, 13, LIGHTGRAY);
+                ty += 19.0f;
+                DrawText("- Hierarchical Skeleton Tree: Limb rotations propagate naturally from Body ->", (int)tx + 10, (int)ty, 13, LIGHTGRAY);
+                ty += 17.0f;
+                DrawText("  Biceps -> Forearm -> Hand and Body -> Upper Leg -> Lower Leg -> Foot.", (int)tx + 10, (int)ty, 13, LIGHTGRAY);
+
+                ty += 28.0f;
+                // Section 2: Camera & Keyboard Shortcuts
+                DrawText("2. 3D CAMERA & KEYBOARD SHORTCUTS", (int)tx, (int)ty, 15, GOLD);
+                ty += 22.0f;
+                DrawText("- Hold Right Mouse Button (RMB) + Move Mouse: Rotate 3D camera freely", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Arrow Keys (or custom binds): Move camera Forward / Back / Left / Right", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Left Shift / Left Ctrl: Elevate camera Up / Down", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- R Key: Reset 3D camera to default front view", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- '+' / '-' Keys: Scale currently selected 3D STL part", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- F1 / ESC Key: Toggle or close this Help window / unlock mouse cursor", (int)tx + 10, (int)ty, 13, RAYWHITE);
+
+                ty += 28.0f;
+                // Section 3: Menus & Workflow
+                DrawText("3. MENUS & WORKFLOW", (int)tx, (int)ty, 15, LIME);
+                ty += 22.0f;
+                DrawText("- Part Controls: Adjust local joint offsets & mounting angles, then Save.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Programm Settings: Set COM Port, Baud Rate, Resolution, FPS, Theme, Smoothing.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Telemetry Source: Switch between LIVE UART HARDWARE and DEMO SIMULATION.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                ty += 19.0f;
+                DrawText("- Open 2D Body Map: View connection status (Green = Online, White = Offline).", (int)tx + 10, (int)ty, 13, RAYWHITE);
+
+                // Bottom Close Button inside Help Modal
+                Rectangle btnGotIt = { modalX + (modalW - 160.0f) / 2.0f, modalY + modalH - 46.0f, 160.0f, 32.0f };
+                bool gotItHover = CheckCollisionPointRec(mousePos, btnGotIt);
+                DrawRectangleRec(btnGotIt, gotItHover ? SKYBLUE : BLUE);
+                DrawRectangleLines((int)btnGotIt.x, (int)btnGotIt.y, (int)btnGotIt.width, (int)btnGotIt.height, RAYWHITE);
+                int gotItW = MeasureText("Close Help", 14);
+                DrawText("Close Help", (int)(btnGotIt.x + (btnGotIt.width - gotItW) / 2.0f), (int)btnGotIt.y + 9, 14, RAYWHITE);
+                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && gotItHover) {
+                    showHelpWindow = false;
+                }
+            }
 
         } else {
             // ================= 2D FULLSCREEN BODY MAP MODE =================
