@@ -20,3 +20,4 @@ CPackSourceConfig.cmake
 .vs/
 *.user
 .history/
+.csv/
