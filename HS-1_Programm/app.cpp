@@ -4,6 +4,7 @@
 #include "stl_loader.h"
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <cmath>
 #include <string>
 
@@ -23,6 +24,11 @@ struct PartTransform {
     float sensorRotX;  // Dynamic IMU Pitch (propagates hierarchically to children)
     float sensorRotY;  // Dynamic IMU Yaw (propagates hierarchically to children)
     float sensorRotZ;  // Dynamic IMU Roll (propagates hierarchically to children)
+};
+
+struct MotionFrame {
+    float timestamp;
+    Vector3 angles[13]; // sensorRotX, sensorRotY, sensorRotZ for all 13 parts
 };
 
 struct ResolutionOption {
@@ -259,7 +265,6 @@ int main() {
     }
 
     // --- HIERARCHICAL SKELETON TREE (PARENT INDICES) ---
-    // Index 1 (Body) is the root (-1)
     const int parentIndex[13] = {
         1,  // 0: Right Biceps   -> attached to Body (1)
        -1,  // 1: Body           -> Root
@@ -299,12 +304,24 @@ int main() {
         "11. Left Foot", "12. Left Leg High", "13. Left Leg Low"
     };
 
+    // Screen modes
     bool is2DMode = false;
     bool isProgramSettingsMode = false;
+    bool isRecorderMode = false;
     bool shouldExitApp = false;
+
     float statusMsgTimer = 0.0f;
     const char* statusMsgText = "";
     
+    // Motion Recorder state
+    std::vector<MotionFrame> recordedFrames;
+    bool isRecording = false;
+    bool isPlaying = false;
+    float recordStartTime = 0.0f;
+    int playbackFrameIndex = 0;
+    float recorderMsgTimer = 0.0f;
+    const char* recorderMsgText = "";
+
     bool bodyConnected[13] = { false }; 
 
     int selectedPart = 0; 
@@ -349,9 +366,18 @@ int main() {
 
     while (!WindowShouldClose() && !shouldExitApp) {
         if (statusMsgTimer > 0.0f) statusMsgTimer -= GetFrameTime();
+        if (recorderMsgTimer > 0.0f) recorderMsgTimer -= GetFrameTime();
 
-        // Hierarchical Demo Wave Simulation (shoulders + elbows + knees)
-        if (demoWaveMode) {
+        // Motion Playback or Demo Simulation update
+        if (isPlaying && !recordedFrames.empty()) {
+            const MotionFrame& frame = recordedFrames[playbackFrameIndex];
+            for (int i = 0; i < totalParts; i++) {
+                parts[i].sensorRotX = frame.angles[i].x;
+                parts[i].sensorRotY = frame.angles[i].y;
+                parts[i].sensorRotZ = frame.angles[i].z;
+            }
+            playbackFrameIndex = (playbackFrameIndex + 1) % (int)recordedFrames.size();
+        } else if (demoWaveMode) {
             float t = (float)GetTime() * 2.2f;
             float shoulderWave = sinf(t) * 25.0f;
             float elbowWave    = (sinf(t - 0.6f) + 1.0f) * 20.0f;
@@ -369,8 +395,18 @@ int main() {
             for (int i = 0; i < 13; i++) bodyConnected[i] = true;
         }
 
+        // Capture frame if recording is active
+        if (isRecording) {
+            MotionFrame mf;
+            mf.timestamp = (float)GetTime() - recordStartTime;
+            for (int i = 0; i < totalParts; i++) {
+                mf.angles[i] = (Vector3){ parts[i].sensorRotX, parts[i].sensorRotY, parts[i].sensorRotZ };
+            }
+            recordedFrames.push_back(mf);
+        }
+
         // Toggle Help overlay with F1
-        if (!isProgramSettingsMode && IsKeyPressed(KEY_F1)) {
+        if (!isProgramSettingsMode && !isRecorderMode && IsKeyPressed(KEY_F1)) {
             showHelpWindow = !showHelpWindow;
             if (showHelpWindow) {
                 showControlWindow = false;
@@ -406,7 +442,7 @@ int main() {
             }
         }
 
-        // Camera movement logic
+        // Camera movement logic (works in 3D mode & Recorder 3D preview)
         if (!is2DMode && !isProgramSettingsMode && !showControlWindow && !showKeybindsWindow && !showHelpWindow && waitingForKeyIndex == -1) {
             float camSpeed = camSpeedOptions[selectedCamSpeed].value;
             Vector3 forward = { camera.target.x - camera.position.x, 0.0f, camera.target.z - camera.position.z };
@@ -432,7 +468,7 @@ int main() {
             camera.target = (Vector3){ 0.0f, 20.0f, 0.0f };
         }
 
-        if (!is2DMode && !isProgramSettingsMode && !showHelpWindow) {
+        if (!is2DMode && !isProgramSettingsMode && !isRecorderMode && !showHelpWindow) {
             if (IsKeyDown(KEY_KP_ADD) || IsKeyDown(KEY_EQUAL))      parts[selectedPart].scale += 0.001f;
             if (IsKeyDown(KEY_KP_SUBTRACT) || IsKeyDown(KEY_MINUS)) parts[selectedPart].scale -= 0.001f;
         }
@@ -739,6 +775,202 @@ int main() {
                 }
             }
 
+        } else if (isRecorderMode) {
+            // ================= MOTION RECORDER & EXPORT TAB =================
+            Color hudTextColor = (selectedTheme == 3) ? BLACK : RAYWHITE;
+            Color hudSubColor  = (selectedTheme == 3) ? DARKGRAY : LIGHTGRAY;
+
+            // Render 3D Exoskeleton Viewport in the background so you can watch recording/playback
+            Matrix jointMatrices[13];
+            Matrix worldMatrices[13];
+            for (int i = 0; i < totalParts; i++) {
+                jointMatrices[i] = GetPartJointMatrix(i, parts, parentIndex);
+                worldMatrices[i] = GetPartWorldMatrix(i, parts, parentIndex);
+            }
+
+            BeginMode3D(camera);
+                if (showGroundGrid) DrawGrid(50, 10.0f);
+
+                Model* models[13] = { 
+                    &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
+                    &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
+                };
+                Color colors[13] = { 
+                    RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
+                    MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
+                };
+
+                for (int i = 0; i < 13; i++) {
+                    Vector3 jointPos = { jointMatrices[i].m12, jointMatrices[i].m13, jointMatrices[i].m14 };
+                    int pIdx = parentIndex[i];
+                    if (pIdx != -1 && showJointPivots) {
+                        Vector3 parentJointPos = { jointMatrices[pIdx].m12, jointMatrices[pIdx].m13, jointMatrices[pIdx].m14 };
+                        DrawLine3D(parentJointPos, jointPos, YELLOW);
+                        DrawSphere(jointPos, 0.5f, WHITE);
+                    }
+                    if (isLoaded[i]) {
+                        rlPushMatrix();
+                            rlMultMatrixf(MatrixToFloat(worldMatrices[i]));
+                            DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
+                            if (showModelWireframe) DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
+                        rlPopMatrix();
+                    }
+                }
+            EndMode3D();
+
+            // Top Header
+            DrawText("HS-1 MOTION CAPTURE RECORDER & CSV EXPORTER", 20, 18, 22, hudTextColor);
+            const char* recStateLabel = isRecording ? "STATE: RECORDING..." : (isPlaying ? "STATE: PLAYING BACK" : "STATE: IDLE");
+            Color recStateColor = isRecording ? RED : (isPlaying ? LIME : SKYBLUE);
+            DrawText(recStateLabel, 20, 48, 16, recStateColor);
+
+            float durationSec = recordedFrames.empty() ? 0.0f : recordedFrames.back().timestamp;
+            DrawText(TextFormat("Captured Frames: %i  |  Duration: %.2f sec  |  Source: %s",
+                (int)recordedFrames.size(), durationSec, demoWaveMode ? "DEMO SIMULATION" : comPorts[selectedComPort]),
+                20, 72, 14, hudSubColor);
+
+            // Blinking Red REC dot in top-left if recording
+            if (isRecording && ((int)(GetTime() * 4.0) % 2 == 0)) {
+                DrawCircle(560, 56, 8.0f, RED);
+            }
+
+            // Back to 3D Main View Button (Top Right)
+            Rectangle btnBackRec = { (float)GetScreenWidth() - 170, 20, 150, 36 };
+            bool btnBackRecHover = CheckCollisionPointRec(mousePos, btnBackRec);
+            DrawRectangleRec(btnBackRec, btnBackRecHover ? ORANGE : GRAY);
+            DrawRectangleLines((int)btnBackRec.x, (int)btnBackRec.y, (int)btnBackRec.width, (int)btnBackRec.height, RAYWHITE);
+            int backRecW = MeasureText("Back to 3D", 15);
+            DrawText("Back to 3D", (int)(btnBackRec.x + (btnBackRec.width - backRecW) / 2), (int)btnBackRec.y + 10, 15, BLACK);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackRecHover) {
+                isRecorderMode = false;
+                isRecording = false;
+                isPlaying = false;
+            }
+
+            // Bottom Control Dock Panel
+            float dockW = 720.0f;
+            float dockH = 120.0f;
+            float dockX = (GetScreenWidth() - dockW) / 2.0f;
+            float dockY = (float)GetScreenHeight() - dockH - 25.0f;
+
+            DrawRectangle((int)dockX, (int)dockY, (int)dockW, (int)dockH, (Color){ 28, 32, 38, 235 });
+            DrawRectangleLines((int)dockX, (int)dockY, (int)dockW, (int)dockH, SKYBLUE);
+
+            // Timeline Progress Bar
+            Rectangle barBg = { dockX + 25.0f, dockY + 18.0f, dockW - 50.0f, 14.0f };
+            DrawRectangleRec(barBg, DARKGRAY);
+            DrawRectangleLines((int)barBg.x, (int)barBg.y, (int)barBg.width, (int)barBg.height, GRAY);
+
+            if (!recordedFrames.empty()) {
+                float progress = 1.0f;
+                if (isPlaying) {
+                    progress = (float)playbackFrameIndex / (float)recordedFrames.size();
+                }
+                DrawRectangle((int)barBg.x + 1, (int)barBg.y + 1, (int)((barBg.width - 2) * progress), (int)barBg.height - 2, isRecording ? RED : LIME);
+            }
+
+            // 4 Main Buttons: REC | STOP | PLAY | EXPORT
+            float btnWidth  = 148.0f;
+            float btnHeight = 44.0f;
+            float gap       = 22.0f;
+            float startX    = dockX + (dockW - (btnWidth * 4 + gap * 3)) / 2.0f;
+            float btnY      = dockY + 50.0f;
+
+            // 1. REC Button
+            Rectangle btnRec = { startX, btnY, btnWidth, btnHeight };
+            bool hoverRec = CheckCollisionPointRec(mousePos, btnRec);
+            DrawRectangleRec(btnRec, isRecording ? RED : (hoverRec ? MAROON : (Color){ 160, 30, 30, 255 }));
+            DrawRectangleLines((int)btnRec.x, (int)btnRec.y, (int)btnRec.width, (int)btnRec.height, RAYWHITE);
+            int wRec = MeasureText("REC", 16);
+            DrawText("REC", (int)(btnRec.x + (btnRec.width - wRec) / 2), (int)btnRec.y + 14, 16, RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverRec) {
+                recordedFrames.clear();
+                isPlaying = false;
+                isRecording = true;
+                recordStartTime = (float)GetTime();
+                playbackFrameIndex = 0;
+                recorderMsgText = "Recording started...";
+                recorderMsgTimer = 2.5f;
+            }
+
+            // 2. STOP Button
+            Rectangle btnStop = { startX + (btnWidth + gap) * 1, btnY, btnWidth, btnHeight };
+            bool hoverStop = CheckCollisionPointRec(mousePos, btnStop);
+            DrawRectangleRec(btnStop, hoverStop ? LIGHTGRAY : GRAY);
+            DrawRectangleLines((int)btnStop.x, (int)btnStop.y, (int)btnStop.width, (int)btnStop.height, BLACK);
+            int wStop = MeasureText("STOP", 16);
+            DrawText("STOP", (int)(btnStop.x + (btnStop.width - wStop) / 2), (int)btnStop.y + 14, 16, BLACK);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverStop) {
+                if (isRecording || isPlaying) {
+                    isRecording = false;
+                    isPlaying = false;
+                    recorderMsgText = TextFormat("Stopped. Total frames: %i", (int)recordedFrames.size());
+                    recorderMsgTimer = 3.0f;
+                }
+            }
+
+            // 3. PLAY Button
+            Rectangle btnPlay = { startX + (btnWidth + gap) * 2, btnY, btnWidth, btnHeight };
+            bool hoverPlay = CheckCollisionPointRec(mousePos, btnPlay);
+            DrawRectangleRec(btnPlay, isPlaying ? LIME : (hoverPlay ? GREEN : DARKGREEN));
+            DrawRectangleLines((int)btnPlay.x, (int)btnPlay.y, (int)btnPlay.width, (int)btnPlay.height, RAYWHITE);
+            int wPlay = MeasureText("PLAY", 16);
+            DrawText("PLAY", (int)(btnPlay.x + (btnPlay.width - wPlay) / 2), (int)btnPlay.y + 14, 16, isPlaying ? BLACK : RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverPlay) {
+                if (!recordedFrames.empty()) {
+                    isRecording = false;
+                    demoWaveMode = false; // Pause live demo wave so recorded playback is visible
+                    isPlaying = true;
+                    playbackFrameIndex = 0;
+                    recorderMsgText = "Playing recorded motion sequence...";
+                    recorderMsgTimer = 2.5f;
+                } else {
+                    recorderMsgText = "No recorded data yet! Press REC first.";
+                    recorderMsgTimer = 3.0f;
+                }
+            }
+
+            // 4. EXPORT Button
+            Rectangle btnExport = { startX + (btnWidth + gap) * 3, btnY, btnWidth, btnHeight };
+            bool hoverExport = CheckCollisionPointRec(mousePos, btnExport);
+            DrawRectangleRec(btnExport, hoverExport ? SKYBLUE : BLUE);
+            DrawRectangleLines((int)btnExport.x, (int)btnExport.y, (int)btnExport.width, (int)btnExport.height, RAYWHITE);
+            int wExp = MeasureText("EXPORT CSV", 15);
+            DrawText("EXPORT CSV", (int)(btnExport.x + (btnExport.width - wExp) / 2), (int)btnExport.y + 14, 15, RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverExport) {
+                if (!recordedFrames.empty()) {
+                    std::ofstream csvOut("hs1_motion_record.csv");
+                    if (csvOut.is_open()) {
+                        csvOut << "Frame,Timestamp_s";
+                        for (int p = 0; p < totalParts; p++) {
+                            csvOut << ",Part" << p << "_Pitch,Part" << p << "_Yaw,Part" << p << "_Roll";
+                        }
+                        csvOut << "\n";
+
+                        for (size_t f = 0; f < recordedFrames.size(); f++) {
+                            csvOut << f << "," << recordedFrames[f].timestamp;
+                            for (int p = 0; p < totalParts; p++) {
+                                csvOut << "," << recordedFrames[f].angles[p].x
+                                       << "," << recordedFrames[f].angles[p].y
+                                       << "," << recordedFrames[f].angles[p].z;
+                            }
+                            csvOut << "\n";
+                        }
+                        csvOut.close();
+                        recorderMsgText = "Exported to hs1_motion_record.csv!";
+                        recorderMsgTimer = 3.5f;
+                    }
+                } else {
+                    recorderMsgText = "Nothing to export! Record motion first.";
+                    recorderMsgTimer = 3.0f;
+                }
+            }
+
+            if (recorderMsgTimer > 0.0f) {
+                int rMsgW = MeasureText(recorderMsgText, 16);
+                DrawText(recorderMsgText, (int)((GetScreenWidth() - rMsgW) / 2.0f), (int)dockY - 28, 16, YELLOW);
+            }
+
         } else if (!is2DMode) {
             // ================= 3D HIERARCHICAL SKELETON MODE =================
             Color hudTextColor = (selectedTheme == 3) ? BLACK : RAYWHITE;
@@ -862,7 +1094,7 @@ int main() {
                 showJointPivots = !showJointPivots;
             }
 
-            // --- 5. HELP BUTTON (UNDER SKELETON BONES BUTTON) ---
+            // --- 5. HELP BUTTON ---
             Rectangle btnHelpRect = { (float)GetScreenWidth() - 180, 164, 170, 28 };
             bool btnHelpHover = CheckCollisionPointRec(mousePos, btnHelpRect);
             DrawRectangleRec(btnHelpRect, showHelpWindow ? SKYBLUE : (btnHelpHover ? LIGHTGRAY : BLUE));
@@ -878,9 +1110,24 @@ int main() {
                 }
             }
 
+            // --- 6. MOTION RECORDER TAB BUTTON ---
+            Rectangle btnRecTabRect = { (float)GetScreenWidth() - 180, 200, 170, 28 };
+            bool btnRecTabHover = CheckCollisionPointRec(mousePos, btnRecTabRect);
+            DrawRectangleRec(btnRecTabRect, btnRecTabHover ? RED : MAROON);
+            DrawRectangleLines((int)btnRecTabRect.x, (int)btnRecTabRect.y, (int)btnRecTabRect.width, (int)btnRecTabRect.height, RAYWHITE);
+            int recTabW = MeasureText("Motion Recorder", 13);
+            DrawText("Motion Recorder", (int)(btnRecTabRect.x + (btnRecTabRect.width - recTabW) / 2), (int)btnRecTabRect.y + 8, 13, RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnRecTabHover) {
+                isRecorderMode = true;
+                showControlWindow = false;
+                showKeybindsWindow = false;
+                showHelpWindow = false;
+                showDropdownList = false;
+            }
+
             // Part Controls Window
             if (showControlWindow) {
-                Rectangle winRect = { (float)GetScreenWidth() - 320, 200, 300, 390 };
+                Rectangle winRect = { (float)GetScreenWidth() - 320, 238, 300, 390 };
                 DrawRectangleRec(winRect, LIGHTGRAY);
                 DrawRectangleLines((int)winRect.x, (int)winRect.y, (int)winRect.width, (int)winRect.height, BLACK);
                 
@@ -988,7 +1235,7 @@ int main() {
 
             // Keybinds Setup Window
             if (showKeybindsWindow) {
-                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 200, 300, 310 };
+                Rectangle winKeyRect = { (float)GetScreenWidth() - 320, 238, 300, 310 };
                 DrawRectangleRec(winKeyRect, LIGHTGRAY);
                 DrawRectangleLines((int)winKeyRect.x, (int)winKeyRect.y, (int)winKeyRect.width, (int)winKeyRect.height, BLACK);
                 
@@ -1038,18 +1285,16 @@ int main() {
 
             // ================= HELP MODAL WINDOW OVERLAY =================
             if (showHelpWindow) {
-                // Dim background slightly for readability
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 0, 0, 0, 150 });
 
                 float modalW = 760.0f;
-                float modalH = 510.0f;
+                float modalH = 520.0f;
                 float modalX = (GetScreenWidth() - modalW) / 2.0f;
                 float modalY = (GetScreenHeight() - modalH) / 2.0f;
 
                 DrawRectangle((int)modalX, (int)modalY, (int)modalW, (int)modalH, (Color){ 32, 36, 42, 255 });
                 DrawRectangleLines((int)modalX, (int)modalY, (int)modalW, (int)modalH, SKYBLUE);
 
-                // Modal Header Bar
                 DrawRectangle((int)modalX, (int)modalY, (int)modalW, 38, (Color){ 20, 60, 100, 255 });
                 DrawText("HS-1 EXOSKELETON - USER GUIDE & SYSTEM OVERVIEW", (int)modalX + 16, (int)modalY + 10, 17, RAYWHITE);
 
@@ -1065,7 +1310,6 @@ int main() {
                 float tx = modalX + 22.0f;
                 float ty = modalY + 52.0f;
 
-                // Section 1: About the System
                 DrawText("1. ABOUT HS-1 FULL-BODY TELEMETRY CONFIGURATOR", (int)tx, (int)ty, 15, SKYBLUE);
                 ty += 22.0f;
                 DrawText("- Real-time 3D kinematic visualizer for the 13-node HS-1 motion tracking suit.", (int)tx + 10, (int)ty, 13, RAYWHITE);
@@ -1076,8 +1320,7 @@ int main() {
                 ty += 17.0f;
                 DrawText("  Biceps -> Forearm -> Hand and Body -> Upper Leg -> Lower Leg -> Foot.", (int)tx + 10, (int)ty, 13, LIGHTGRAY);
 
-                ty += 28.0f;
-                // Section 2: Camera & Keyboard Shortcuts
+                ty += 26.0f;
                 DrawText("2. 3D CAMERA & KEYBOARD SHORTCUTS", (int)tx, (int)ty, 15, GOLD);
                 ty += 22.0f;
                 DrawText("- Hold Right Mouse Button (RMB) + Move Mouse: Rotate 3D camera freely", (int)tx + 10, (int)ty, 13, RAYWHITE);
@@ -1090,21 +1333,19 @@ int main() {
                 ty += 19.0f;
                 DrawText("- '+' / '-' Keys: Scale currently selected 3D STL part", (int)tx + 10, (int)ty, 13, RAYWHITE);
                 ty += 19.0f;
-                DrawText("- F1 / ESC Key: Toggle or close this Help window / unlock mouse cursor", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                DrawText("- F1 / ESC Key: Toggle Help window / unlock mouse cursor", (int)tx + 10, (int)ty, 13, RAYWHITE);
 
-                ty += 28.0f;
-                // Section 3: Menus & Workflow
+                ty += 26.0f;
                 DrawText("3. MENUS & WORKFLOW", (int)tx, (int)ty, 15, LIME);
                 ty += 22.0f;
                 DrawText("- Part Controls: Adjust local joint offsets & mounting angles, then Save.", (int)tx + 10, (int)ty, 13, RAYWHITE);
                 ty += 19.0f;
-                DrawText("- Programm Settings: Set COM Port, Baud Rate, Resolution, FPS, Theme, Smoothing.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                DrawText("- Programm Settings: Set COM Port, Baud Rate, Resolution, FPS, Theme, Demo.", (int)tx + 10, (int)ty, 13, RAYWHITE);
                 ty += 19.0f;
-                DrawText("- Telemetry Source: Switch between LIVE UART HARDWARE and DEMO SIMULATION.", (int)tx + 10, (int)ty, 13, RAYWHITE);
+                DrawText("- Motion Recorder: Record joint trajectories (REC / STOP / PLAY) & Export CSV.", (int)tx + 10, (int)ty, 13, RAYWHITE);
                 ty += 19.0f;
                 DrawText("- Open 2D Body Map: View connection status (Green = Online, White = Offline).", (int)tx + 10, (int)ty, 13, RAYWHITE);
 
-                // Bottom Close Button inside Help Modal
                 Rectangle btnGotIt = { modalX + (modalW - 160.0f) / 2.0f, modalY + modalH - 46.0f, 160.0f, 32.0f };
                 bool gotItHover = CheckCollisionPointRec(mousePos, btnGotIt);
                 DrawRectangleRec(btnGotIt, gotItHover ? SKYBLUE : BLUE);
