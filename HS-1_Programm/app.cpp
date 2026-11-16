@@ -421,6 +421,9 @@ int main() {
         if (statusMsgTimer > 0.0f) statusMsgTimer -= GetFrameTime();
         if (recorderMsgTimer > 0.0f) recorderMsgTimer -= GetFrameTime();
 
+        // Global per-frame flag: becomes true as soon as any dropdown/modal consumes a click
+        bool uiClickConsumed = false;
+
         // Time-Accurate Motion Playback or Demo Simulation update
         if (isPlaying && !recordedFrames.empty()) {
             float totalDuration = recordedFrames.back().timestamp;
@@ -551,21 +554,6 @@ int main() {
             DrawText(titleText, (int)(cx - titleW / 2.0f), 25, titleFontSize, RAYWHITE);
             DrawLine((int)(cx - 480), 65, (int)(cx + 480), 65, GRAY);
 
-            bool noDropdownOpen = (activeSettingsDropdown == -1);
-
-            Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
-            bool btnBackHover = noDropdownOpen && CheckCollisionPointRec(mousePos, btnBackTopRight);
-            DrawRectangleRec(btnBackTopRight, btnBackHover ? ORANGE : GRAY);
-            DrawRectangleLines((int)btnBackTopRight.x, (int)btnBackTopRight.y, (int)btnBackTopRight.width, (int)btnBackTopRight.height, RAYWHITE);
-            int backTxtW = MeasureText("Back", 16);
-            DrawText("Back", (int)(btnBackTopRight.x + (btnBackTopRight.width - backTxtW) / 2), (int)btnBackTopRight.y + 9, 16, BLACK);
-
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
-                isProgramSettingsMode = false;
-                activeSettingsDropdown = -1;
-                statusMsgTimer = 0.0f;
-            }
-
             float leftLabelX  = cx - 470.0f;
             float leftBtnX    = cx - 260.0f;
             float rightLabelX = cx + 30.0f;
@@ -573,62 +561,160 @@ int main() {
             float btnW        = 220.0f;
             float btnH        = 34.0f;
 
+            float r1Y = 110.0f;
+            float r2Y = 160.0f;
+            float r3Y = 210.0f;
+            float r4Y = 260.0f;
+            float r5Y = 310.0f;
+            float r6Y = 360.0f;
+
+            Rectangle resBtnRect    = { leftBtnX,  r1Y, btnW, btnH };
+            Rectangle fpsBtnRect    = { leftBtnX,  r2Y, btnW, btnH };
+            Rectangle comBtnRect    = { leftBtnX,  r3Y, btnW, btnH };
+            Rectangle baudBtnRect   = { leftBtnX,  r4Y, btnW, btnH };
+            Rectangle themeBtnRect  = { rightBtnX, r1Y, btnW, btnH };
+            Rectangle speedBtnRect  = { rightBtnX, r3Y, btnW, btnH };
+            Rectangle fovBtnRect    = { rightBtnX, r4Y, btnW, btnH };
+            Rectangle smoothBtnRect = { rightBtnX, r5Y, btnW, btnH };
+
+            // 1. PROCESS OPEN DROPDOWN INPUT FIRST (consumes click so underlying buttons NEVER fire)
+            if (activeSettingsDropdown != -1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                uiClickConsumed = true; // Any click while a dropdown is open is exclusively handled here
+
+                if (activeSettingsDropdown == 0) {
+                    for (int i = 0; i < totalResolutions; i++) {
+                        Rectangle itemRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height + (float)(i * 30), resBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedResolution = i;
+                            ApplyWindowResolution(resolutions[i].width, resolutions[i].height);
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 1) {
+                    for (int i = 0; i < totalFpsOptions; i++) {
+                        Rectangle itemRect = { fpsBtnRect.x, fpsBtnRect.y + fpsBtnRect.height + (float)(i * 30), fpsBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedFps = i;
+                            SetTargetFPS(fpsOptions[i].value);
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 2) {
+                    for (int i = 0; i < totalComPorts; i++) {
+                        Rectangle itemRect = { comBtnRect.x, comBtnRect.y + comBtnRect.height + (float)(i * 26), comBtnRect.width, 26 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedComPort = i;
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 3) {
+                    for (int i = 0; i < totalBaudRates; i++) {
+                        Rectangle itemRect = { baudBtnRect.x, baudBtnRect.y + baudBtnRect.height + (float)(i * 30), baudBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedBaudRate = i;
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 4) {
+                    for (int i = 0; i < totalCamSpeeds; i++) {
+                        Rectangle itemRect = { speedBtnRect.x, speedBtnRect.y + speedBtnRect.height + (float)(i * 30), speedBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedCamSpeed = i;
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 5) {
+                    for (int i = 0; i < totalFovOptions; i++) {
+                        Rectangle itemRect = { fovBtnRect.x, fovBtnRect.y + fovBtnRect.height + (float)(i * 30), fovBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedFov = i;
+                            camera.fovy = fovOptions[i].value;
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 6) {
+                    for (int i = 0; i < totalSmoothingOptions; i++) {
+                        Rectangle itemRect = { smoothBtnRect.x, smoothBtnRect.y + smoothBtnRect.height + (float)(i * 30), smoothBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedSmoothing = i;
+                            break;
+                        }
+                    }
+                } else if (activeSettingsDropdown == 7) {
+                    for (int i = 0; i < totalThemes; i++) {
+                        Rectangle itemRect = { themeBtnRect.x, themeBtnRect.y + themeBtnRect.height + (float)(i * 30), themeBtnRect.width, 30 };
+                        if (CheckCollisionPointRec(mousePos, itemRect)) {
+                            selectedTheme = i;
+                            break;
+                        }
+                    }
+                }
+
+                // Close dropdown after picking an item OR clicking anywhere outside
+                activeSettingsDropdown = -1;
+            }
+
+            bool canClickUI = (!uiClickConsumed && activeSettingsDropdown == -1);
+
+            Rectangle btnBackTopRight = { (float)GetScreenWidth() - 140, 20, 120, 35 };
+            bool btnBackHover = canClickUI && CheckCollisionPointRec(mousePos, btnBackTopRight);
+            DrawRectangleRec(btnBackTopRight, btnBackHover ? ORANGE : GRAY);
+            DrawRectangleLines((int)btnBackTopRight.x, (int)btnBackTopRight.y, (int)btnBackTopRight.width, (int)btnBackTopRight.height, RAYWHITE);
+            int backTxtW = MeasureText("Back", 16);
+            DrawText("Back", (int)(btnBackTopRight.x + (btnBackTopRight.width - backTxtW) / 2), (int)btnBackTopRight.y + 9, 16, BLACK);
+
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBackHover) {
+                isProgramSettingsMode = false;
+                activeSettingsDropdown = -1;
+                statusMsgTimer = 0.0f;
+            }
+
             DrawText("SYSTEM & TELEMETRY", (int)leftLabelX, 80, 16, SKYBLUE);
             DrawText("GRAPHICS, CAMERA & MODE", (int)rightLabelX, 80, 16, SKYBLUE);
             DrawLine((int)cx, 80, (int)cx, 440, GRAY);
 
-            // Helper for dropdown headers (blocks click-through if another dropdown is open)
             auto DrawDropdownHeader = [&](Rectangle rect, const char* text, int dropdownId) {
-                bool canInteract = (activeSettingsDropdown == -1 || activeSettingsDropdown == dropdownId);
-                bool hover = canInteract && CheckCollisionPointRec(mousePos, rect);
+                bool hover = canClickUI && CheckCollisionPointRec(mousePos, rect);
                 DrawRectangleRec(rect, hover ? LIGHTGRAY : WHITE);
                 DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, BLACK);
                 DrawText(text, (int)rect.x + 10, (int)rect.y + 10, 14, BLACK);
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover) {
-                    activeSettingsDropdown = (activeSettingsDropdown == dropdownId) ? -1 : dropdownId;
-                    return true;
+                if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover) {
+                    activeSettingsDropdown = dropdownId;
+                    uiClickConsumed = true;
+                    canClickUI = false;
                 }
-                return false;
             };
 
             // LEFT COLUMN
-            float r1Y = 110.0f;
             DrawText("Window Resolution:", (int)leftLabelX, (int)r1Y + 8, 16, RAYWHITE);
-            Rectangle resBtnRect = { leftBtnX, r1Y, btnW, btnH };
-            bool headerClicked = DrawDropdownHeader(resBtnRect, TextFormat("%s [v]", resolutions[selectedResolution].label), 0);
+            DrawDropdownHeader(resBtnRect, TextFormat("%s [v]", resolutions[selectedResolution].label), 0);
 
-            float r2Y = 160.0f;
             DrawText("Target Frame Rate:", (int)leftLabelX, (int)r2Y + 8, 16, RAYWHITE);
-            Rectangle fpsBtnRect = { leftBtnX, r2Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(fpsBtnRect, TextFormat("%s [v]", fpsOptions[selectedFps].label), 1);
+            DrawDropdownHeader(fpsBtnRect, TextFormat("%s [v]", fpsOptions[selectedFps].label), 1);
 
-            float r3Y = 210.0f;
             DrawText("Telemetry COM Port:", (int)leftLabelX, (int)r3Y + 8, 16, RAYWHITE);
-            Rectangle comBtnRect = { leftBtnX, r3Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(comBtnRect, TextFormat("%s [v]", comPorts[selectedComPort]), 2);
+            DrawDropdownHeader(comBtnRect, TextFormat("%s [v]", comPorts[selectedComPort]), 2);
 
-            float r4Y = 260.0f;
             DrawText("UART Baud Rate:", (int)leftLabelX, (int)r4Y + 8, 16, RAYWHITE);
-            Rectangle baudBtnRect = { leftBtnX, r4Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(baudBtnRect, TextFormat("%i baud [v]", baudRates[selectedBaudRate]), 3);
+            DrawDropdownHeader(baudBtnRect, TextFormat("%i baud [v]", baudRates[selectedBaudRate]), 3);
 
-            float r5Y = 310.0f;
             DrawText("Auto-Reconnect UART:", (int)leftLabelX, (int)r5Y + 8, 16, RAYWHITE);
             Rectangle autoRecBtnRect = { leftBtnX, r5Y, btnW, btnH };
-            bool autoRecHover = noDropdownOpen && CheckCollisionPointRec(mousePos, autoRecBtnRect);
+            bool autoRecHover = canClickUI && CheckCollisionPointRec(mousePos, autoRecBtnRect);
             DrawRectangleRec(autoRecBtnRect, autoReconnectUart ? (autoRecHover ? LIME : GREEN) : (autoRecHover ? GRAY : LIGHTGRAY));
             DrawRectangleLines((int)autoRecBtnRect.x, (int)autoRecBtnRect.y, (int)autoRecBtnRect.width, (int)autoRecBtnRect.height, BLACK);
             DrawText(autoReconnectUart ? "Auto-Reconnect: ON" : "Auto-Reconnect: OFF", (int)autoRecBtnRect.x + 35, (int)autoRecBtnRect.y + 10, 14, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && autoRecHover) autoReconnectUart = !autoReconnectUart;
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && autoRecHover) {
+                autoReconnectUart = !autoReconnectUart;
+            }
 
-            float r6Y = 360.0f;
             DrawText("Sensors Calibration:", (int)leftLabelX, (int)r6Y + 8, 16, RAYWHITE);
             Rectangle zeroBtnRect = { leftBtnX, r6Y, btnW, btnH };
-            bool zeroBtnHover = noDropdownOpen && CheckCollisionPointRec(mousePos, zeroBtnRect);
+            bool zeroBtnHover = canClickUI && CheckCollisionPointRec(mousePos, zeroBtnRect);
             DrawRectangleRec(zeroBtnRect, zeroBtnHover ? GOLD : ORANGE);
             DrawRectangleLines((int)zeroBtnRect.x, (int)zeroBtnRect.y, (int)zeroBtnRect.width, (int)zeroBtnRect.height, BLACK);
             DrawText("Zero / Tare All Sensors", (int)zeroBtnRect.x + 25, (int)zeroBtnRect.y + 10, 14, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && zeroBtnHover) {
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && zeroBtnHover) {
                 for (int i = 0; i < totalParts; i++) {
                     parts[i].sensorRotX = 0.0f;
                     parts[i].sensorRotY = 0.0f;
@@ -640,43 +726,39 @@ int main() {
 
             // RIGHT COLUMN
             DrawText("3D Scene Theme:", (int)rightLabelX, (int)r1Y + 8, 16, RAYWHITE);
-            Rectangle themeBtnRect = { rightBtnX, r1Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(themeBtnRect, TextFormat("%s [v]", themes[selectedTheme].label), 7);
+            DrawDropdownHeader(themeBtnRect, TextFormat("%s [v]", themes[selectedTheme].label), 7);
 
             DrawText("Scene Overlays:", (int)rightLabelX, (int)r2Y + 8, 16, RAYWHITE);
             Rectangle gridBtnRect = { rightBtnX, r2Y, 105, btnH };
-            bool gridBtnHover = noDropdownOpen && CheckCollisionPointRec(mousePos, gridBtnRect);
+            bool gridBtnHover = canClickUI && CheckCollisionPointRec(mousePos, gridBtnRect);
             DrawRectangleRec(gridBtnRect, showGroundGrid ? (gridBtnHover ? LIME : GREEN) : (gridBtnHover ? GRAY : LIGHTGRAY));
             DrawRectangleLines((int)gridBtnRect.x, (int)gridBtnRect.y, (int)gridBtnRect.width, (int)gridBtnRect.height, BLACK);
             DrawText(showGroundGrid ? "Grid: ON" : "Grid: OFF", (int)gridBtnRect.x + 22, (int)gridBtnRect.y + 10, 13, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && gridBtnHover) showGroundGrid = !showGroundGrid;
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && gridBtnHover) showGroundGrid = !showGroundGrid;
 
             Rectangle wireBtnRect = { rightBtnX + 115, r2Y, 105, btnH };
-            bool wireBtnHover = noDropdownOpen && CheckCollisionPointRec(mousePos, wireBtnRect);
+            bool wireBtnHover = canClickUI && CheckCollisionPointRec(mousePos, wireBtnRect);
             DrawRectangleRec(wireBtnRect, showModelWireframe ? (wireBtnHover ? LIME : GREEN) : (wireBtnHover ? GRAY : LIGHTGRAY));
             DrawRectangleLines((int)wireBtnRect.x, (int)wireBtnRect.y, (int)wireBtnRect.width, (int)wireBtnRect.height, BLACK);
             DrawText(showModelWireframe ? "Wires: ON" : "Wires: OFF", (int)wireBtnRect.x + 18, (int)wireBtnRect.y + 10, 13, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && wireBtnHover) showModelWireframe = !showModelWireframe;
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && wireBtnHover) showModelWireframe = !showModelWireframe;
 
             DrawText("Camera Speed:", (int)rightLabelX, (int)r3Y + 8, 16, RAYWHITE);
-            Rectangle speedBtnRect = { rightBtnX, r3Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(speedBtnRect, TextFormat("%s [v]", camSpeedOptions[selectedCamSpeed].label), 4);
+            DrawDropdownHeader(speedBtnRect, TextFormat("%s [v]", camSpeedOptions[selectedCamSpeed].label), 4);
 
             DrawText("Camera Field of View:", (int)rightLabelX, (int)r4Y + 8, 16, RAYWHITE);
-            Rectangle fovBtnRect = { rightBtnX, r4Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(fovBtnRect, TextFormat("%s [v]", fovOptions[selectedFov].label), 5);
+            DrawDropdownHeader(fovBtnRect, TextFormat("%s [v]", fovOptions[selectedFov].label), 5);
 
             DrawText("Motion Smoothing:", (int)rightLabelX, (int)r5Y + 8, 16, RAYWHITE);
-            Rectangle smoothBtnRect = { rightBtnX, r5Y, btnW, btnH };
-            headerClicked |= DrawDropdownHeader(smoothBtnRect, TextFormat("%s [v]", smoothingOptions[selectedSmoothing].label), 6);
+            DrawDropdownHeader(smoothBtnRect, TextFormat("%s [v]", smoothingOptions[selectedSmoothing].label), 6);
 
             DrawText("Telemetry Source:", (int)rightLabelX, (int)r6Y + 8, 16, RAYWHITE);
             Rectangle demoBtnRect = { rightBtnX, r6Y, btnW, btnH };
-            bool demoBtnHover = noDropdownOpen && CheckCollisionPointRec(mousePos, demoBtnRect);
+            bool demoBtnHover = canClickUI && CheckCollisionPointRec(mousePos, demoBtnRect);
             DrawRectangleRec(demoBtnRect, demoWaveMode ? (demoBtnHover ? SKYBLUE : BLUE) : (demoBtnHover ? GRAY : LIGHTGRAY));
             DrawRectangleLines((int)demoBtnRect.x, (int)demoBtnRect.y, (int)demoBtnRect.width, (int)demoBtnRect.height, BLACK);
             DrawText(demoWaveMode ? "Mode: DEMO SIMULATION" : "Mode: LIVE UART HARDWARE", (int)demoBtnRect.x + 16, (int)demoBtnRect.y + 10, 13, demoWaveMode ? RAYWHITE : BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && demoBtnHover) {
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && demoBtnHover) {
                 demoWaveMode = !demoWaveMode;
                 if (!demoWaveMode) {
                     for (int i = 0; i < 13; i++) {
@@ -692,13 +774,13 @@ int main() {
             float bottomY = (float)GetScreenHeight() - 70.0f;
 
             Rectangle btnSaveProgRect = { cx - 250, bottomY, 240, 42 };
-            bool btnSaveProgHover = noDropdownOpen && CheckCollisionPointRec(mousePos, btnSaveProgRect);
+            bool btnSaveProgHover = canClickUI && CheckCollisionPointRec(mousePos, btnSaveProgRect);
             DrawRectangleRec(btnSaveProgRect, btnSaveProgHover ? LIME : GREEN);
             DrawRectangleLines((int)btnSaveProgRect.x, (int)btnSaveProgRect.y, (int)btnSaveProgRect.width, (int)btnSaveProgRect.height, BLACK);
             int saveTxtW = MeasureText("Save Program Settings", 16);
             DrawText("Save Program Settings", (int)(btnSaveProgRect.x + (btnSaveProgRect.width - saveTxtW) / 2), (int)btnSaveProgRect.y + 13, 16, BLACK);
 
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnSaveProgHover) {
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnSaveProgHover) {
                 std::ofstream progOut("program_settings.txt");
                 if (progOut.is_open()) {
                     progOut << selectedResolution << " " << selectedFps << " " << selectedComPort << " "
@@ -714,13 +796,13 @@ int main() {
             }
 
             Rectangle btnResetProgRect = { cx + 10, bottomY, 240, 42 };
-            bool btnResetProgHover = noDropdownOpen && CheckCollisionPointRec(mousePos, btnResetProgRect);
+            bool btnResetProgHover = canClickUI && CheckCollisionPointRec(mousePos, btnResetProgRect);
             DrawRectangleRec(btnResetProgRect, btnResetProgHover ? RED : MAROON);
             DrawRectangleLines((int)btnResetProgRect.x, (int)btnResetProgRect.y, (int)btnResetProgRect.width, (int)btnResetProgRect.height, RAYWHITE);
             int resetTxtW = MeasureText("Reset All to Default", 16);
             DrawText("Reset All to Default", (int)(btnResetProgRect.x + (btnResetProgRect.width - resetTxtW) / 2), (int)btnResetProgRect.y + 13, 16, RAYWHITE);
 
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnResetProgHover) {
+            if (canClickUI && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnResetProgHover) {
                 selectedResolution = 0; selectedFps = 1; selectedComPort = 2; selectedBaudRate = 0;
                 showGroundGrid = true; showModelWireframe = true; selectedCamSpeed = 1; selectedFov = 0;
                 selectedSmoothing = 1; selectedTheme = 0; demoWaveMode = false; autoReconnectUart = true;
@@ -740,104 +822,71 @@ int main() {
                 DrawText(statusMsgText, (int)(cx - msgW / 2.0f), (int)bottomY - 28, 16, YELLOW);
             }
 
-            // DROPDOWN LISTS (with auto-close when clicking outside)
-            Rectangle activeListRect = { 0, 0, 0, 0 };
-
+            // 2. RENDER OPEN DROPDOWN OVERLAY ON TOP OF EVERYTHING
             if (activeSettingsDropdown == 0) {
-                activeListRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height, resBtnRect.width, 30.0f * totalResolutions };
                 for (int i = 0; i < totalResolutions; i++) {
                     Rectangle itemRect = { resBtnRect.x, resBtnRect.y + resBtnRect.height + (float)(i * 30), resBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedResolution) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(resolutions[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
-                        selectedResolution = i; activeSettingsDropdown = -1;
-                        ApplyWindowResolution(resolutions[i].width, resolutions[i].height);
-                    }
                 }
             } else if (activeSettingsDropdown == 1) {
-                activeListRect = { fpsBtnRect.x, fpsBtnRect.y + fpsBtnRect.height, fpsBtnRect.width, 30.0f * totalFpsOptions };
                 for (int i = 0; i < totalFpsOptions; i++) {
                     Rectangle itemRect = { fpsBtnRect.x, fpsBtnRect.y + fpsBtnRect.height + (float)(i * 30), fpsBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedFps) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(fpsOptions[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
-                        selectedFps = i; activeSettingsDropdown = -1;
-                        SetTargetFPS(fpsOptions[i].value);
-                    }
                 }
             } else if (activeSettingsDropdown == 2) {
-                activeListRect = { comBtnRect.x, comBtnRect.y + comBtnRect.height, comBtnRect.width, 26.0f * totalComPorts };
                 for (int i = 0; i < totalComPorts; i++) {
                     Rectangle itemRect = { comBtnRect.x, comBtnRect.y + comBtnRect.height + (float)(i * 26), comBtnRect.width, 26 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedComPort) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(comPorts[i], (int)itemRect.x + 10, (int)itemRect.y + 6, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) { selectedComPort = i; activeSettingsDropdown = -1; }
                 }
             } else if (activeSettingsDropdown == 3) {
-                activeListRect = { baudBtnRect.x, baudBtnRect.y + baudBtnRect.height, baudBtnRect.width, 30.0f * totalBaudRates };
                 for (int i = 0; i < totalBaudRates; i++) {
                     Rectangle itemRect = { baudBtnRect.x, baudBtnRect.y + baudBtnRect.height + (float)(i * 30), baudBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedBaudRate) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(TextFormat("%i baud", baudRates[i]), (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) { selectedBaudRate = i; activeSettingsDropdown = -1; }
                 }
             } else if (activeSettingsDropdown == 4) {
-                activeListRect = { speedBtnRect.x, speedBtnRect.y + speedBtnRect.height, speedBtnRect.width, 30.0f * totalCamSpeeds };
                 for (int i = 0; i < totalCamSpeeds; i++) {
                     Rectangle itemRect = { speedBtnRect.x, speedBtnRect.y + speedBtnRect.height + (float)(i * 30), speedBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedCamSpeed) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(camSpeedOptions[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) { selectedCamSpeed = i; activeSettingsDropdown = -1; }
                 }
             } else if (activeSettingsDropdown == 5) {
-                activeListRect = { fovBtnRect.x, fovBtnRect.y + fovBtnRect.height, fovBtnRect.width, 30.0f * totalFovOptions };
                 for (int i = 0; i < totalFovOptions; i++) {
                     Rectangle itemRect = { fovBtnRect.x, fovBtnRect.y + fovBtnRect.height + (float)(i * 30), fovBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedFov) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(fovOptions[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
-                        selectedFov = i; activeSettingsDropdown = -1; camera.fovy = fovOptions[i].value;
-                    }
                 }
             } else if (activeSettingsDropdown == 6) {
-                activeListRect = { smoothBtnRect.x, smoothBtnRect.y + smoothBtnRect.height, smoothBtnRect.width, 30.0f * totalSmoothingOptions };
                 for (int i = 0; i < totalSmoothingOptions; i++) {
                     Rectangle itemRect = { smoothBtnRect.x, smoothBtnRect.y + smoothBtnRect.height + (float)(i * 30), smoothBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedSmoothing) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(smoothingOptions[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) { selectedSmoothing = i; activeSettingsDropdown = -1; }
                 }
             } else if (activeSettingsDropdown == 7) {
-                activeListRect = { themeBtnRect.x, themeBtnRect.y + themeBtnRect.height, themeBtnRect.width, 30.0f * totalThemes };
                 for (int i = 0; i < totalThemes; i++) {
                     Rectangle itemRect = { themeBtnRect.x, themeBtnRect.y + themeBtnRect.height + (float)(i * 30), themeBtnRect.width, 30 };
                     bool itemHover = CheckCollisionPointRec(mousePos, itemRect);
                     DrawRectangleRec(itemRect, (i == selectedTheme) ? SKYBLUE : (itemHover ? LIGHTGRAY : RAYWHITE));
                     DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                     DrawText(themes[i].label, (int)itemRect.x + 10, (int)itemRect.y + 8, 14, BLACK);
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) { selectedTheme = i; activeSettingsDropdown = -1; }
                 }
-            }
-
-            if (activeSettingsDropdown != -1 &&
-                IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
-                !headerClicked &&
-                !CheckCollisionPointRec(mousePos, activeListRect)) {
-                activeSettingsDropdown = -1;
             }
 
         } else if (isRecorderMode) {
@@ -1197,6 +1246,23 @@ int main() {
                 }
             EndMode3D();
 
+            // 1. PROCESS OPEN PART DROPDOWN CLICK FIRST (prevents clicking any underlying button in the same frame)
+            if (showControlWindow && showDropdownList && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                Rectangle winRect = { (float)GetScreenWidth() - 320, 238, 300, 390 };
+                for (int row = 0; row < totalParts; row++) {
+                    int partIdx = dropdownOrder[row];
+                    Rectangle itemRect = { winRect.x + 15, winRect.y + 75 + (float)(row * 20), 270, 20 };
+                    if (CheckCollisionPointRec(mousePos, itemRect)) {
+                        selectedPart = partIdx;
+                        break;
+                    }
+                }
+                showDropdownList = false;
+                uiClickConsumed = true;
+            }
+
+            bool canInteract3D = (!uiClickConsumed && !showDropdownList && !showHelpWindow);
+
             DrawText("HS-1 Exoskeleton - Hierarchical Kinematic Configurator", 10, 10, 21, hudTextColor);
             DrawText(TextFormat("%s @ %i baud | Mode: %s | Models: %i/13", 
                 comPorts[selectedComPort], baudRates[selectedBaudRate],
@@ -1210,13 +1276,13 @@ int main() {
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
             Rectangle btnTo2D = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
-            bool btn2DHover = CheckCollisionPointRec(mousePos, btnTo2D);
+            bool btn2DHover = canInteract3D && CheckCollisionPointRec(mousePos, btnTo2D);
             DrawRectangleRec(btnTo2D, btn2DHover ? SKYBLUE : BLUE);
             DrawRectangleLines((int)btnTo2D.x, (int)btnTo2D.y, (int)btnTo2D.width, (int)btnTo2D.height, BLACK);
             int map2dW = MeasureText("Open 2D Body Map", 15);
             DrawText("Open 2D Body Map", (int)(btnTo2D.x + (btnTo2D.width - map2dW) / 2), (int)btnTo2D.y + 12, 15, RAYWHITE);
 
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btn2DHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btn2DHover) {
                 is2DMode = true;
                 showControlWindow = false;
                 showKeybindsWindow = false;
@@ -1225,65 +1291,65 @@ int main() {
 
             // --- EXIT APP BUTTON (BOTTOM RIGHT) ---
             Rectangle btnExitApp = { (float)GetScreenWidth() - 130, (float)GetScreenHeight() - 55, 110, 35 };
-            bool btnExitHover = CheckCollisionPointRec(mousePos, btnExitApp);
+            bool btnExitHover = canInteract3D && CheckCollisionPointRec(mousePos, btnExitApp);
             DrawRectangleRec(btnExitApp, btnExitHover ? RED : MAROON);
             DrawRectangleLines((int)btnExitApp.x, (int)btnExitApp.y, (int)btnExitApp.width, (int)btnExitApp.height, RAYWHITE);
             int exitTxtW = MeasureText("Exit [X]", 15);
             DrawText("Exit [X]", (int)(btnExitApp.x + (btnExitApp.width - exitTxtW) / 2), (int)btnExitApp.y + 10, 15, RAYWHITE);
 
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnExitHover) shouldExitApp = true;
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnExitHover) shouldExitApp = true;
 
             // --- TOP RIGHT MENU BUTTONS ---
             Rectangle btnOpenRect = { (float)GetScreenWidth() - 180, 10, 170, 30 };
-            bool btnOpenHover = CheckCollisionPointRec(mousePos, btnOpenRect);
+            bool btnOpenHover = canInteract3D && CheckCollisionPointRec(mousePos, btnOpenRect);
             DrawRectangleRec(btnOpenRect, btnOpenHover ? LIGHTGRAY : GRAY);
             DrawRectangleLines((int)btnOpenRect.x, (int)btnOpenRect.y, (int)btnOpenRect.width, (int)btnOpenRect.height, BLACK);
             int openW = MeasureText("Part Controls", 15);
             DrawText("Part Controls", (int)(btnOpenRect.x + (btnOpenRect.width - openW) / 2), (int)btnOpenRect.y + 8, 15, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnOpenHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnOpenHover) {
                 showControlWindow = !showControlWindow; showKeybindsWindow = false; showHelpWindow = false; showDropdownList = false;
             }
 
             Rectangle btnKeybindsRect = { (float)GetScreenWidth() - 180, 50, 170, 30 };
-            bool btnKeybindsHover = CheckCollisionPointRec(mousePos, btnKeybindsRect);
+            bool btnKeybindsHover = canInteract3D && CheckCollisionPointRec(mousePos, btnKeybindsRect);
             DrawRectangleRec(btnKeybindsRect, btnKeybindsHover ? LIGHTGRAY : GRAY);
             DrawRectangleLines((int)btnKeybindsRect.x, (int)btnKeybindsRect.y, (int)btnKeybindsRect.width, (int)btnKeybindsRect.height, BLACK);
             int kbW = MeasureText("Keybinds Setup", 15);
             DrawText("Keybinds Setup", (int)(btnKeybindsRect.x + (btnKeybindsRect.width - kbW) / 2), (int)btnKeybindsRect.y + 8, 15, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnKeybindsHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnKeybindsHover) {
                 showKeybindsWindow = !showKeybindsWindow; showControlWindow = false; showHelpWindow = false;
             }
 
             Rectangle btnProgSettingsRect = { (float)GetScreenWidth() - 180, 90, 170, 30 };
-            bool btnProgSettingsHover = CheckCollisionPointRec(mousePos, btnProgSettingsRect);
+            bool btnProgSettingsHover = canInteract3D && CheckCollisionPointRec(mousePos, btnProgSettingsRect);
             DrawRectangleRec(btnProgSettingsRect, btnProgSettingsHover ? LIGHTGRAY : GRAY);
             DrawRectangleLines((int)btnProgSettingsRect.x, (int)btnProgSettingsRect.y, (int)btnProgSettingsRect.width, (int)btnProgSettingsRect.height, BLACK);
             int psW = MeasureText("Programm Settings", 15);
             DrawText("Programm Settings", (int)(btnProgSettingsRect.x + (btnProgSettingsRect.width - psW) / 2), (int)btnProgSettingsRect.y + 8, 15, BLACK);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnProgSettingsHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnProgSettingsHover) {
                 isProgramSettingsMode = true; showControlWindow = false; showKeybindsWindow = false; showHelpWindow = false; showDropdownList = false;
             }
 
             // Toggle Joint Skeleton Overlay Button
             Rectangle btnJointsRect = { (float)GetScreenWidth() - 180, 130, 170, 26 };
-            bool btnJointsHover = CheckCollisionPointRec(mousePos, btnJointsRect);
+            bool btnJointsHover = canInteract3D && CheckCollisionPointRec(mousePos, btnJointsRect);
             DrawRectangleRec(btnJointsRect, showJointPivots ? (btnJointsHover ? GOLD : ORANGE) : (btnJointsHover ? GRAY : DARKGRAY));
             DrawRectangleLines((int)btnJointsRect.x, (int)btnJointsRect.y, (int)btnJointsRect.width, (int)btnJointsRect.height, BLACK);
             const char* jLabel = showJointPivots ? "Skeleton Bones: ON" : "Skeleton Bones: OFF";
             int jW = MeasureText(jLabel, 13);
             DrawText(jLabel, (int)(btnJointsRect.x + (btnJointsRect.width - jW) / 2), (int)btnJointsRect.y + 6, 13, showJointPivots ? BLACK : RAYWHITE);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnJointsHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnJointsHover) {
                 showJointPivots = !showJointPivots;
             }
 
             // --- 5. HELP BUTTON ---
             Rectangle btnHelpRect = { (float)GetScreenWidth() - 180, 164, 170, 28 };
-            bool btnHelpHover = CheckCollisionPointRec(mousePos, btnHelpRect);
+            bool btnHelpHover = canInteract3D && CheckCollisionPointRec(mousePos, btnHelpRect);
             DrawRectangleRec(btnHelpRect, showHelpWindow ? SKYBLUE : (btnHelpHover ? LIGHTGRAY : BLUE));
             DrawRectangleLines((int)btnHelpRect.x, (int)btnHelpRect.y, (int)btnHelpRect.width, (int)btnHelpRect.height, BLACK);
             int helpTxtW = MeasureText("Help [F1]", 14);
             DrawText("Help [F1]", (int)(btnHelpRect.x + (btnHelpRect.width - helpTxtW) / 2), (int)btnHelpRect.y + 7, 14, showHelpWindow ? BLACK : RAYWHITE);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnHelpHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnHelpHover) {
                 showHelpWindow = !showHelpWindow;
                 if (showHelpWindow) {
                     showControlWindow = false;
@@ -1294,12 +1360,12 @@ int main() {
 
             // --- 6. MOTION RECORDER TAB BUTTON ---
             Rectangle btnRecTabRect = { (float)GetScreenWidth() - 180, 200, 170, 28 };
-            bool btnRecTabHover = CheckCollisionPointRec(mousePos, btnRecTabRect);
+            bool btnRecTabHover = canInteract3D && CheckCollisionPointRec(mousePos, btnRecTabRect);
             DrawRectangleRec(btnRecTabRect, btnRecTabHover ? RED : MAROON);
             DrawRectangleLines((int)btnRecTabRect.x, (int)btnRecTabRect.y, (int)btnRecTabRect.width, (int)btnRecTabRect.height, RAYWHITE);
             int recTabW = MeasureText("Motion Recorder", 14);
             DrawText("Motion Recorder", (int)(btnRecTabRect.x + (btnRecTabRect.width - recTabW) / 2), (int)btnRecTabRect.y + 7, 14, RAYWHITE);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnRecTabHover) {
+            if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnRecTabHover) {
                 isRecorderMode = true;
                 showControlWindow = false;
                 showKeybindsWindow = false;
@@ -1317,25 +1383,25 @@ int main() {
                 DrawText("Select & Control Part", (int)winRect.x + 10, (int)winRect.y + 8, 15, RAYWHITE);
 
                 Rectangle btnCloseRect = { winRect.x + winRect.width - 25, winRect.y + 5, 20, 20 };
-                bool btnCloseHover = CheckCollisionPointRec(mousePos, btnCloseRect);
+                bool btnCloseHover = canInteract3D && CheckCollisionPointRec(mousePos, btnCloseRect);
                 DrawRectangleRec(btnCloseRect, btnCloseHover ? RED : DARKGRAY);
                 DrawText("X", (int)btnCloseRect.x + 6, (int)btnCloseRect.y + 3, 14, RAYWHITE);
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnCloseHover) {
+                if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnCloseHover) {
                     showControlWindow = false; showDropdownList = false;
                 }
 
                 Rectangle dropDownRect = { winRect.x + 15, winRect.y + 45, 270, 30 };
-                bool dropHover = CheckCollisionPointRec(mousePos, dropDownRect);
+                bool dropHover = canInteract3D && CheckCollisionPointRec(mousePos, dropDownRect);
                 DrawRectangleRec(dropDownRect, dropHover ? GRAY : WHITE);
                 DrawRectangleLines((int)dropDownRect.x, (int)dropDownRect.y, (int)dropDownRect.width, (int)dropDownRect.height, BLACK);
                 DrawText(TextFormat("Part: %s [v]", partNames[selectedPart]), (int)dropDownRect.x + 10, (int)dropDownRect.y + 8, 13, BLACK);
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dropHover) {
-                    showDropdownList = !showDropdownList;
+                if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dropHover) {
+                    showDropdownList = true;
+                    canInteract3D = false;
                 }
 
-                // Prevent click-through on underlying buttons while dropdown is open
                 auto DrawHoldButton = [&](Rectangle rect, const char* text) {
-                    bool hover = !showDropdownList && CheckCollisionPointRec(mousePos, rect);
+                    bool hover = canInteract3D && CheckCollisionPointRec(mousePos, rect);
                     bool down = hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
                     DrawRectangleRec(rect, down ? DARKGRAY : (hover ? GRAY : LIGHTGRAY));
                     DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, BLACK);
@@ -1345,12 +1411,12 @@ int main() {
                 };
 
                 auto DrawPressButton = [&](Rectangle rect, const char* text) {
-                    bool hover = !showDropdownList && CheckCollisionPointRec(mousePos, rect);
+                    bool hover = canInteract3D && CheckCollisionPointRec(mousePos, rect);
                     DrawRectangleRec(rect, hover ? GRAY : DARKGRAY);
                     DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, BLACK);
                     int tw = MeasureText(text, 12);
                     DrawText(text, (int)(rect.x + (rect.width - tw) / 2), (int)rect.y + 11, 12, RAYWHITE);
-                    return (!showDropdownList && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover);
+                    return (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover);
                 };
 
                 float moveStep = 0.2f;
@@ -1406,6 +1472,7 @@ int main() {
 
                 DrawText("Config saved to exoskeleton_config.txt", (int)winRect.x + 35, (int)winRect.y + 345, 12, DARKGRAY);
 
+                // Render dropdown overlay on top of Part Controls buttons
                 if (showDropdownList) {
                     Rectangle fullListRect = { winRect.x + 15, winRect.y + 75, 270, 20.0f * totalParts };
                     DrawRectangleRec(fullListRect, WHITE);
@@ -1419,17 +1486,6 @@ int main() {
                         DrawRectangleRec(itemRect, rowBg);
                         DrawRectangleLines((int)itemRect.x, (int)itemRect.y, (int)itemRect.width, (int)itemRect.height, BLACK);
                         DrawText(TextFormat("%i. %s", row + 1, partNames[partIdx]), (int)itemRect.x + 6, (int)itemRect.y + 3, 13, BLACK);
-
-                        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && itemHover) {
-                            selectedPart = partIdx;
-                            showDropdownList = false;
-                        }
-                    }
-
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
-                        !CheckCollisionPointRec(mousePos, fullListRect) &&
-                        !dropHover) {
-                        showDropdownList = false;
                     }
                 }
             }
@@ -1444,10 +1500,10 @@ int main() {
                 DrawText("Keybinds Configuration", (int)winKeyRect.x + 10, (int)winKeyRect.y + 8, 15, RAYWHITE);
 
                 Rectangle btnCloseKey = { winKeyRect.x + winKeyRect.width - 25, winKeyRect.y + 5, 20, 20 };
-                bool btnCloseKeyHover = CheckCollisionPointRec(mousePos, btnCloseKey);
+                bool btnCloseKeyHover = canInteract3D && CheckCollisionPointRec(mousePos, btnCloseKey);
                 DrawRectangleRec(btnCloseKey, btnCloseKeyHover ? RED : DARKGRAY);
                 DrawText("X", (int)btnCloseKey.x + 6, (int)btnCloseKey.y + 3, 14, RAYWHITE);
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnCloseKeyHover) {
+                if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnCloseKeyHover) {
                     showKeybindsWindow = false; waitingForKeyIndex = -1;
                 }
 
@@ -1459,7 +1515,7 @@ int main() {
                     DrawText(bindLabels[i], (int)winKeyRect.x + 15, (int)yPos + 8, 14, BLACK);
 
                     Rectangle btnBindRect = { winKeyRect.x + 160, yPos, 125, 30 };
-                    bool btnBindHover = CheckCollisionPointRec(mousePos, btnBindRect);
+                    bool btnBindHover = canInteract3D && CheckCollisionPointRec(mousePos, btnBindRect);
                     bool isWaiting = (waitingForKeyIndex == i);
                     Color btnColor = isWaiting ? YELLOW : (btnBindHover ? GRAY : WHITE);
                     
@@ -1468,7 +1524,7 @@ int main() {
                     const char* keyName = isWaiting ? "Press Key..." : TextFormat("Key: %i", *bindKeys[i]);
                     DrawText(keyName, (int)btnBindRect.x + 10, (int)btnBindRect.y + 8, 13, BLACK);
 
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBindHover) waitingForKeyIndex = i;
+                    if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && btnBindHover) waitingForKeyIndex = i;
                 }
             }
 
