@@ -1286,7 +1286,7 @@ int main() {
             // 3D Mouse Raycast Picking (Hover + Left Click to select any 3D limb/part directly)
             hoveredPart3D = -1;
             if (canInteract3D && !pointerOverUI) {
-                Ray pickRay = GetScreenToWorldRay(mousePos, camera);
+                Ray pickRay = GetMouseRay(mousePos, camera);
                 float closestDist = 1e30f;
 
                 for (int i = 0; i < totalParts; i++) {
