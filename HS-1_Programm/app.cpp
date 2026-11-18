@@ -377,7 +377,15 @@ int main() {
 
     bool bodyConnected[13] = { false }; 
 
+    // Telemetry rate & latency monitor state
+    int telemetryPacketCounter = 0;
+    float telemetryTimer = 0.0f;
+    float measuredTelemetryHz = 0.0f;
+    float measuredLatencyMs = 0.0f;
+    double lastTelemetryTimestamp = 0.0;
+
     int selectedPart = 1; // Default to Body (Root)
+    int hoveredPart3D = -1;
     bool showDropdownList = false;
     int waitingForKeyIndex = -1;
 
@@ -418,16 +426,18 @@ int main() {
     bool cursorUnlocked = false;
 
     while (!WindowShouldClose() && !shouldExitApp) {
-        if (statusMsgTimer > 0.0f) statusMsgTimer -= GetFrameTime();
-        if (recorderMsgTimer > 0.0f) recorderMsgTimer -= GetFrameTime();
+        float dt = GetFrameTime();
+        if (statusMsgTimer > 0.0f) statusMsgTimer -= dt;
+        if (recorderMsgTimer > 0.0f) recorderMsgTimer -= dt;
 
         // Global per-frame flag: becomes true as soon as any dropdown/modal consumes a click
         bool uiClickConsumed = false;
+        bool telemetryFrameArrived = false;
 
         // Time-Accurate Motion Playback or Demo Simulation update
         if (isPlaying && !recordedFrames.empty()) {
             float totalDuration = recordedFrames.back().timestamp;
-            playbackTime += GetFrameTime() * playbackSpeed;
+            playbackTime += dt * playbackSpeed;
             if (totalDuration > 0.001f && playbackTime > totalDuration) {
                 playbackTime = fmodf(playbackTime, totalDuration);
                 playbackFrameIndex = 0;
@@ -444,6 +454,7 @@ int main() {
                 parts[i].sensorRotY = frame.angles[i].y;
                 parts[i].sensorRotZ = frame.angles[i].z;
             }
+            telemetryFrameArrived = true;
         } else if (demoWaveMode) {
             float t = (float)GetTime() * 2.2f;
             float shoulderWave = sinf(t) * 25.0f;
@@ -460,6 +471,31 @@ int main() {
             parts[12].sensorRotX =  fabsf(shoulderWave) * 0.6f;
 
             for (int i = 0; i < 13; i++) bodyConnected[i] = true;
+            telemetryFrameArrived = true;
+        }
+
+        // Update Telemetry Hz & Latency metrics
+        if (telemetryFrameArrived) {
+            double now = GetTime();
+            if (lastTelemetryTimestamp > 0.0) {
+                float instantMs = (float)((now - lastTelemetryTimestamp) * 1000.0);
+                measuredLatencyMs = (measuredLatencyMs <= 0.01f)
+                    ? instantMs
+                    : (measuredLatencyMs * 0.85f + instantMs * 0.15f);
+            }
+            lastTelemetryTimestamp = now;
+            telemetryPacketCounter++;
+        }
+
+        telemetryTimer += dt;
+        if (telemetryTimer >= 0.5f) {
+            measuredTelemetryHz = (float)telemetryPacketCounter / telemetryTimer;
+            telemetryPacketCounter = 0;
+            telemetryTimer = 0.0f;
+            if (measuredTelemetryHz < 0.1f) {
+                measuredLatencyMs = 0.0f;
+                lastTelemetryTimestamp = 0.0;
+            }
         }
 
         // Capture frame if recording is active
@@ -579,7 +615,7 @@ int main() {
 
             // 1. PROCESS OPEN DROPDOWN INPUT FIRST (consumes click so underlying buttons NEVER fire)
             if (activeSettingsDropdown != -1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                uiClickConsumed = true; // Any click while a dropdown is open is exclusively handled here
+                uiClickConsumed = true;
 
                 if (activeSettingsDropdown == 0) {
                     for (int i = 0; i < totalResolutions; i++) {
@@ -650,7 +686,6 @@ int main() {
                     }
                 }
 
-                // Close dropdown after picking an item OR clicking anywhere outside
                 activeSettingsDropdown = -1;
             }
 
@@ -1209,44 +1244,16 @@ int main() {
                 worldMatrices[i] = GetPartWorldMatrix(i, parts, parentIndex);
             }
 
-            BeginMode3D(camera);
-                if (showGroundGrid) {
-                    DrawGrid(50, 10.0f);
-                }
+            Model* models[13] = { 
+                &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
+                &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
+            };
+            Color colors[13] = { 
+                RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
+                MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
+            };
 
-                Model* models[13] = { 
-                    &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
-                    &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
-                };
-                Color colors[13] = { 
-                    RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
-                    MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
-                };
-
-                for (int i = 0; i < 13; i++) {
-                    Vector3 jointPos = { jointMatrices[i].m12, jointMatrices[i].m13, jointMatrices[i].m14 };
-
-                    // Draw kinematic bone link between parent joint and child joint
-                    int pIdx = parentIndex[i];
-                    if (pIdx != -1 && showJointPivots) {
-                        Vector3 parentJointPos = { jointMatrices[pIdx].m12, jointMatrices[pIdx].m13, jointMatrices[pIdx].m14 };
-                        DrawLine3D(parentJointPos, jointPos, YELLOW);
-                        DrawSphere(jointPos, (i == selectedPart) ? 0.9f : 0.5f, (i == selectedPart) ? LIME : WHITE);
-                    }
-
-                    if (isLoaded[i]) {
-                        rlPushMatrix();
-                            rlMultMatrixf(MatrixToFloat(worldMatrices[i]));
-                            DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
-                            if (showModelWireframe) {
-                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
-                            }
-                        rlPopMatrix();
-                    }
-                }
-            EndMode3D();
-
-            // 1. PROCESS OPEN PART DROPDOWN CLICK FIRST (prevents clicking any underlying button in the same frame)
+            // 1. PROCESS OPEN PART DROPDOWN CLICK FIRST
             if (showControlWindow && showDropdownList && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 Rectangle winRect = { (float)GetScreenWidth() - 320, 238, 300, 390 };
                 for (int row = 0; row < totalParts; row++) {
@@ -1263,15 +1270,93 @@ int main() {
 
             bool canInteract3D = (!uiClickConsumed && !showDropdownList && !showHelpWindow);
 
+            // Check if mouse is hovering over any 2D UI panel/button so 3D raycast doesn't trigger through UI
+            Rectangle topMenuArea   = { (float)GetScreenWidth() - 190, 0, 190, 235 };
+            Rectangle controlWinBox = { (float)GetScreenWidth() - 320, 238, 300, 390 };
+            Rectangle keybindWinBox = { (float)GetScreenWidth() - 320, 238, 300, 310 };
+            Rectangle btnTo2DBox    = { (float)GetScreenWidth() / 2.0f - 110, (float)GetScreenHeight() - 60, 220, 40 };
+            Rectangle btnExitBox    = { (float)GetScreenWidth() - 130, (float)GetScreenHeight() - 55, 110, 35 };
+
+            bool pointerOverUI = CheckCollisionPointRec(mousePos, topMenuArea) ||
+                                 CheckCollisionPointRec(mousePos, btnTo2DBox) ||
+                                 CheckCollisionPointRec(mousePos, btnExitBox) ||
+                                 (showControlWindow && CheckCollisionPointRec(mousePos, controlWinBox)) ||
+                                 (showKeybindsWindow && CheckCollisionPointRec(mousePos, keybindWinBox));
+
+            // 3D Mouse Raycast Picking (Hover + Left Click to select any 3D limb/part directly)
+            hoveredPart3D = -1;
+            if (canInteract3D && !pointerOverUI) {
+                Ray pickRay = GetScreenToWorldRay(mousePos, camera);
+                float closestDist = 1e30f;
+
+                for (int i = 0; i < totalParts; i++) {
+                    if (!isLoaded[i] || models[i]->meshCount == 0) continue;
+                    Matrix meshTransform = MatrixMultiply(MatrixScale(parts[i].scale, parts[i].scale, parts[i].scale), worldMatrices[i]);
+                    RayCollision hit = GetRayCollisionMesh(pickRay, models[i]->meshes[0], meshTransform);
+                    if (hit.hit && hit.distance < closestDist) {
+                        closestDist = hit.distance;
+                        hoveredPart3D = i;
+                    }
+                }
+
+                if (hoveredPart3D != -1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    selectedPart = hoveredPart3D;
+                    uiClickConsumed = true;
+                }
+            }
+
+            BeginMode3D(camera);
+                if (showGroundGrid) {
+                    DrawGrid(50, 10.0f);
+                }
+
+                for (int i = 0; i < 13; i++) {
+                    Vector3 jointPos = { jointMatrices[i].m12, jointMatrices[i].m13, jointMatrices[i].m14 };
+
+                    // Draw kinematic bone link between parent joint and child joint
+                    int pIdx = parentIndex[i];
+                    if (pIdx != -1 && showJointPivots) {
+                        Vector3 parentJointPos = { jointMatrices[pIdx].m12, jointMatrices[pIdx].m13, jointMatrices[pIdx].m14 };
+                        DrawLine3D(parentJointPos, jointPos, YELLOW);
+                        DrawSphere(jointPos, (i == selectedPart) ? 0.9f : 0.5f, (i == selectedPart) ? LIME : WHITE);
+                    }
+
+                    if (isLoaded[i]) {
+                        rlPushMatrix();
+                            rlMultMatrixf(MatrixToFloat(worldMatrices[i]));
+                            DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
+                            if (i == hoveredPart3D) {
+                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, GOLD);
+                            } else if (i == selectedPart) {
+                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, LIME);
+                            } else if (showModelWireframe) {
+                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
+                            }
+                        rlPopMatrix();
+                    }
+                }
+            EndMode3D();
+
+            // Count active connected nodes for HUD status
+            int connectedNodesCount = 0;
+            for (int i = 0; i < totalParts; i++) {
+                if (bodyConnected[i]) connectedNodesCount++;
+            }
+
             DrawText("HS-1 Exoskeleton - Hierarchical Kinematic Configurator", 10, 10, 21, hudTextColor);
-            DrawText(TextFormat("%s @ %i baud | Mode: %s | Models: %i/13", 
+            DrawText(TextFormat("%s @ %i baud | Mode: %s | Nodes: %i/13", 
                 comPorts[selectedComPort], baudRates[selectedBaudRate],
-                demoWaveMode ? "DEMO" : "UART", loadedModelsCount), 10, 36, 15, hudSubColor);
+                demoWaveMode ? "DEMO" : "UART", connectedNodesCount), 10, 36, 15, hudSubColor);
+
+            // Live Telemetry Rate & Latency Badge
+            Color rateColor = (measuredTelemetryHz >= 50.0f) ? LIME : ((measuredTelemetryHz > 0.1f) ? YELLOW : hudSubColor);
+            DrawText(TextFormat("Telemetry Rate: %.0f Hz | Frame Delta: %.1f ms | Click 3D part to select",
+                measuredTelemetryHz, measuredLatencyMs), 10, 58, 14, rateColor);
 
             if (!modelsDirFound || loadedModelsCount == 0) {
-                DrawRectangle(10, 60, 490, 26, MAROON);
-                DrawRectangleLines(10, 60, 490, 26, RED);
-                DrawText("WARNING: 'Models/' folder not found next to HS1_App.exe!", 20, 66, 14, RAYWHITE);
+                DrawRectangle(10, 82, 490, 26, MAROON);
+                DrawRectangleLines(10, 82, 490, 26, RED);
+                DrawText("WARNING: 'Models/' folder not found next to HS1_App.exe!", 20, 88, 14, RAYWHITE);
             }
             
             // --- 2D MAP BUTTON (BOTTOM CENTER) ---
@@ -1534,11 +1619,15 @@ int main() {
             int pIdx = parentIndex[selectedPart];
             const char* parentName = (pIdx == -1) ? "None (World Root)" : partNames[pIdx];
 
-            DrawText(TextFormat("Selected: %s", partNames[selectedPart]), 10, 95, 16, infoColor);
-            DrawText(TextFormat("Parent Joint: %s", parentName), 10, 117, 15, hudSubColor);
-            DrawText(TextFormat("Local Offset: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 139, 16, valColor);
-            DrawText(TextFormat("Mount Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 161, 16, valColor);
-            DrawText(TextFormat("Sensor Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].sensorRotX, parts[selectedPart].sensorRotY, parts[selectedPart].sensorRotZ), 10, 183, 16, valColor);
+            DrawText(TextFormat("Selected: %s", partNames[selectedPart]), 10, 115, 16, infoColor);
+            if (hoveredPart3D != -1) {
+                DrawText(TextFormat("Hovering: %s (LMB to select)", partNames[hoveredPart3D]), 10, 137, 15, GOLD);
+            } else {
+                DrawText(TextFormat("Parent Joint: %s", parentName), 10, 137, 15, hudSubColor);
+            }
+            DrawText(TextFormat("Local Offset: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 159, 16, valColor);
+            DrawText(TextFormat("Mount Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 181, 16, valColor);
+            DrawText(TextFormat("Sensor Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].sensorRotX, parts[selectedPart].sensorRotY, parts[selectedPart].sensorRotZ), 10, 203, 16, valColor);
 
             // ================= HELP MODAL WINDOW OVERLAY =================
             if (showHelpWindow) {
@@ -1580,15 +1669,15 @@ int main() {
                 ty += 26.0f;
                 DrawText("2. 3D CAMERA & KEYBOARD SHORTCUTS", (int)tx, (int)ty, 16, GOLD);
                 ty += 22.0f;
+                DrawText("- Left Mouse Button (LMB) on 3D Model: Directly select any limb or segment", (int)tx + 10, (int)ty, 14, RAYWHITE);
+                ty += 19.0f;
                 DrawText("- Hold Right Mouse Button (RMB) + Move Mouse: Rotate 3D camera freely", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
                 DrawText("- Arrow Keys (or custom binds): Move camera Forward / Back / Left / Right", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
                 DrawText("- Left Shift / Left Ctrl: Elevate camera Up / Down", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
-                DrawText("- R Key: Reset 3D camera to default front view", (int)tx + 10, (int)ty, 14, RAYWHITE);
-                ty += 19.0f;
-                DrawText("- '+' / '-' Keys: Scale currently selected 3D STL part", (int)tx + 10, (int)ty, 14, RAYWHITE);
+                DrawText("- R Key: Reset 3D camera to default front view | '+' / '-': Scale part", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
                 DrawText("- F1 / ESC Key: Toggle Help window / unlock mouse cursor", (int)tx + 10, (int)ty, 14, RAYWHITE);
 
