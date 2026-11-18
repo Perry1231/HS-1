@@ -354,6 +354,23 @@ int main() {
         10  // 13. Left Foot
     };
 
+    // Symmetrical limb colors (Right == Left)
+    Color partColors[13] = {
+        RED,     // 0: Right Biceps
+        ORANGE,  // 1: Body (Root)
+        BLUE,    // 2: Right Forearm
+        SKYBLUE, // 3: Right Hand
+        GREEN,   // 4: Right Foot
+        YELLOW,  // 5: Right Leg High
+        PURPLE,  // 6: Right Leg Low
+        RED,     // 7: Left Biceps
+        BLUE,    // 8: Left Forearm
+        SKYBLUE, // 9: Left Hand
+        GREEN,   // 10: Left Foot
+        YELLOW,  // 11: Left Leg High
+        PURPLE   // 12: Left Leg Low
+    };
+
     // Screen modes
     bool is2DMode = false;
     bool isProgramSettingsMode = false;
@@ -384,7 +401,7 @@ int main() {
     float measuredLatencyMs = 0.0f;
     double lastTelemetryTimestamp = 0.0;
 
-    int selectedPart = 1; // Default to Body (Root)
+    int selectedPart = -1; // -1 = None selected
     int hoveredPart3D = -1;
     bool showDropdownList = false;
     int waitingForKeyIndex = -1;
@@ -571,7 +588,7 @@ int main() {
             camera.target = (Vector3){ 0.0f, 20.0f, 0.0f };
         }
 
-        if (!is2DMode && !isProgramSettingsMode && !isRecorderMode && !showHelpWindow) {
+        if (!is2DMode && !isProgramSettingsMode && !isRecorderMode && !showHelpWindow && selectedPart != -1) {
             if (IsKeyDown(KEY_KP_ADD) || IsKeyDown(KEY_EQUAL))      parts[selectedPart].scale += 0.001f;
             if (IsKeyDown(KEY_KP_SUBTRACT) || IsKeyDown(KEY_MINUS)) parts[selectedPart].scale -= 0.001f;
         }
@@ -613,7 +630,7 @@ int main() {
             Rectangle fovBtnRect    = { rightBtnX, r4Y, btnW, btnH };
             Rectangle smoothBtnRect = { rightBtnX, r5Y, btnW, btnH };
 
-            // 1. PROCESS OPEN DROPDOWN INPUT FIRST (consumes click so underlying buttons NEVER fire)
+            // 1. PROCESS OPEN DROPDOWN INPUT FIRST
             if (activeSettingsDropdown != -1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 uiClickConsumed = true;
 
@@ -951,10 +968,6 @@ int main() {
                         &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
                         &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
                     };
-                    Color colors[13] = { 
-                        RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
-                        MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
-                    };
 
                     for (int i = 0; i < 13; i++) {
                         Vector3 jointPos = { jointMatrices[i].m12, jointMatrices[i].m13, jointMatrices[i].m14 };
@@ -967,7 +980,7 @@ int main() {
                         if (isLoaded[i]) {
                             rlPushMatrix();
                                 rlMultMatrixf(MatrixToFloat(worldMatrices[i]));
-                                DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
+                                DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, partColors[i]);
                                 if (showModelWireframe) DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
                             rlPopMatrix();
                         }
@@ -1248,10 +1261,6 @@ int main() {
                 &modelBicepsR, &modelBody, &modelForearmR, &modelHandR, &modelFootR, &modelLegHighR, &modelLegLowR,
                 &modelBicepsL, &modelForearmL, &modelHandL, &modelFootL, &modelLegHighL, &modelLegLowL 
             };
-            Color colors[13] = { 
-                RED, ORANGE, BLUE, SKYBLUE, GREEN, YELLOW, PURPLE, 
-                MAROON, DARKBLUE, DARKGREEN, BROWN, DARKPURPLE, GOLD 
-            };
 
             // 1. PROCESS OPEN PART DROPDOWN CLICK FIRST
             if (showControlWindow && showDropdownList && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
@@ -1260,7 +1269,7 @@ int main() {
                     int partIdx = dropdownOrder[row];
                     Rectangle itemRect = { winRect.x + 15, winRect.y + 75 + (float)(row * 20), 270, 20 };
                     if (CheckCollisionPointRec(mousePos, itemRect)) {
-                        selectedPart = partIdx;
+                        selectedPart = (selectedPart == partIdx) ? -1 : partIdx;
                         break;
                     }
                 }
@@ -1283,7 +1292,7 @@ int main() {
                                  (showControlWindow && CheckCollisionPointRec(mousePos, controlWinBox)) ||
                                  (showKeybindsWindow && CheckCollisionPointRec(mousePos, keybindWinBox));
 
-            // 3D Mouse Raycast Picking (Hover + Left Click to select any 3D limb/part directly)
+            // 3D Mouse Raycast Picking (Click once to select, click again to deselect)
             hoveredPart3D = -1;
             if (canInteract3D && !pointerOverUI) {
                 Ray pickRay = GetMouseRay(mousePos, camera);
@@ -1300,7 +1309,11 @@ int main() {
                 }
 
                 if (hoveredPart3D != -1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                    selectedPart = hoveredPart3D;
+                    if (selectedPart == hoveredPart3D) {
+                        selectedPart = -1; // Deselect when clicking the already selected part
+                    } else {
+                        selectedPart = hoveredPart3D;
+                    }
                     uiClickConsumed = true;
                 }
             }
@@ -1324,11 +1337,11 @@ int main() {
                     if (isLoaded[i]) {
                         rlPushMatrix();
                             rlMultMatrixf(MatrixToFloat(worldMatrices[i]));
-                            DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, colors[i]);
-                            if (i == hoveredPart3D) {
-                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, GOLD);
-                            } else if (i == selectedPart) {
+                            DrawModel(*models[i], (Vector3){0, 0, 0}, parts[i].scale, partColors[i]);
+                            if (i == selectedPart) {
                                 DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, LIME);
+                            } else if (i == hoveredPart3D) {
+                                DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, GOLD);
                             } else if (showModelWireframe) {
                                 DrawModelWires(*models[i], (Vector3){0, 0, 0}, parts[i].scale, BLACK);
                             }
@@ -1350,7 +1363,7 @@ int main() {
 
             // Live Telemetry Rate & Latency Badge
             Color rateColor = (measuredTelemetryHz >= 50.0f) ? LIME : ((measuredTelemetryHz > 0.1f) ? YELLOW : hudSubColor);
-            DrawText(TextFormat("Telemetry Rate: %.0f Hz | Frame Delta: %.1f ms | Click 3D part to select",
+            DrawText(TextFormat("Telemetry Rate: %.0f Hz | Frame Delta: %.1f ms | Click 3D part to toggle select",
                 measuredTelemetryHz, measuredLatencyMs), 10, 58, 14, rateColor);
 
             if (!modelsDirFound || loadedModelsCount == 0) {
@@ -1479,29 +1492,33 @@ int main() {
                 bool dropHover = canInteract3D && CheckCollisionPointRec(mousePos, dropDownRect);
                 DrawRectangleRec(dropDownRect, dropHover ? GRAY : WHITE);
                 DrawRectangleLines((int)dropDownRect.x, (int)dropDownRect.y, (int)dropDownRect.width, (int)dropDownRect.height, BLACK);
-                DrawText(TextFormat("Part: %s [v]", partNames[selectedPart]), (int)dropDownRect.x + 10, (int)dropDownRect.y + 8, 13, BLACK);
+                const char* currentPartLabel = (selectedPart != -1) ? partNames[selectedPart] : "None (Click 3D)";
+                DrawText(TextFormat("Part: %s [v]", currentPartLabel), (int)dropDownRect.x + 10, (int)dropDownRect.y + 8, 13, BLACK);
                 if (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dropHover) {
                     showDropdownList = true;
                     canInteract3D = false;
                 }
 
+                bool hasActivePart = (selectedPart != -1);
+
                 auto DrawHoldButton = [&](Rectangle rect, const char* text) {
-                    bool hover = canInteract3D && CheckCollisionPointRec(mousePos, rect);
+                    bool hover = hasActivePart && canInteract3D && CheckCollisionPointRec(mousePos, rect);
                     bool down = hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-                    DrawRectangleRec(rect, down ? DARKGRAY : (hover ? GRAY : LIGHTGRAY));
-                    DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, BLACK);
+                    DrawRectangleRec(rect, !hasActivePart ? (Color){ 185, 185, 185, 255 } : (down ? DARKGRAY : (hover ? GRAY : LIGHTGRAY)));
+                    DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, hasActivePart ? BLACK : GRAY);
                     int tw = MeasureText(text, 12);
-                    DrawText(text, (int)(rect.x + (rect.width - tw) / 2), (int)rect.y + 9, 12, BLACK);
+                    DrawText(text, (int)(rect.x + (rect.width - tw) / 2), (int)rect.y + 9, 12, hasActivePart ? BLACK : DARKGRAY);
                     return down;
                 };
 
-                auto DrawPressButton = [&](Rectangle rect, const char* text) {
-                    bool hover = canInteract3D && CheckCollisionPointRec(mousePos, rect);
-                    DrawRectangleRec(rect, hover ? GRAY : DARKGRAY);
+                auto DrawPressButton = [&](Rectangle rect, const char* text, bool allowWithoutPart = false) {
+                    bool enabled = (hasActivePart || allowWithoutPart);
+                    bool hover = enabled && canInteract3D && CheckCollisionPointRec(mousePos, rect);
+                    DrawRectangleRec(rect, !enabled ? GRAY : (hover ? GRAY : DARKGRAY));
                     DrawRectangleLines((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, BLACK);
                     int tw = MeasureText(text, 12);
                     DrawText(text, (int)(rect.x + (rect.width - tw) / 2), (int)rect.y + 11, 12, RAYWHITE);
-                    return (canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover);
+                    return (enabled && canInteract3D && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hover);
                 };
 
                 float moveStep = 0.2f;
@@ -1531,7 +1548,7 @@ int main() {
                 if (DrawHoldButton(btnTiltUp, "TILT +"))   parts[selectedPart].rotX += rotStep;
 
                 Rectangle btnReset = { winRect.x + 20, winRect.y + 295, 120, 35 };
-                if (DrawPressButton(btnReset, "Reset Default")) {
+                if (DrawPressButton(btnReset, "Reset Default", false) && selectedPart != -1) {
                     parts[selectedPart].pos = parts[selectedPart].defaultPos;
                     parts[selectedPart].rotX = parts[selectedPart].defaultRotX;
                     parts[selectedPart].rotY = parts[selectedPart].defaultRotY;
@@ -1543,7 +1560,7 @@ int main() {
                 }
 
                 Rectangle btnSave = { winRect.x + 160, winRect.y + 295, 120, 35 };
-                if (DrawPressButton(btnSave, "Save Settings")) {
+                if (DrawPressButton(btnSave, "Save Settings", true)) {
                     std::ofstream outFile("exoskeleton_config.txt");
                     if (outFile.is_open()) {
                         for (int i = 0; i < totalParts; i++) {
@@ -1616,18 +1633,28 @@ int main() {
             Color infoColor = (selectedTheme == 3) ? DARKBLUE : YELLOW;
             Color valColor  = (selectedTheme == 3) ? DARKGREEN : GREEN;
 
-            int pIdx = parentIndex[selectedPart];
-            const char* parentName = (pIdx == -1) ? "None (World Root)" : partNames[pIdx];
+            if (selectedPart != -1) {
+                int pIdx = parentIndex[selectedPart];
+                const char* parentName = (pIdx == -1) ? "None (World Root)" : partNames[pIdx];
 
-            DrawText(TextFormat("Selected: %s", partNames[selectedPart]), 10, 115, 16, infoColor);
-            if (hoveredPart3D != -1) {
-                DrawText(TextFormat("Hovering: %s (LMB to select)", partNames[hoveredPart3D]), 10, 137, 15, GOLD);
+                DrawText(TextFormat("Selected: %s (click again to deselect)", partNames[selectedPart]), 10, 115, 16, infoColor);
+                if (hoveredPart3D != -1) {
+                    const char* hoverAction = (hoveredPart3D == selectedPart) ? "LMB to deselect" : "LMB to select";
+                    DrawText(TextFormat("Hovering: %s (%s)", partNames[hoveredPart3D], hoverAction), 10, 137, 15, GOLD);
+                } else {
+                    DrawText(TextFormat("Parent Joint: %s", parentName), 10, 137, 15, hudSubColor);
+                }
+                DrawText(TextFormat("Local Offset: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 159, 16, valColor);
+                DrawText(TextFormat("Mount Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 181, 16, valColor);
+                DrawText(TextFormat("Sensor Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].sensorRotX, parts[selectedPart].sensorRotY, parts[selectedPart].sensorRotZ), 10, 203, 16, valColor);
             } else {
-                DrawText(TextFormat("Parent Joint: %s", parentName), 10, 137, 15, hudSubColor);
+                DrawText("Selected: None", 10, 115, 16, hudSubColor);
+                if (hoveredPart3D != -1) {
+                    DrawText(TextFormat("Hovering: %s (LMB to select)", partNames[hoveredPart3D]), 10, 137, 15, GOLD);
+                } else {
+                    DrawText("Click any 3D segment to inspect or edit", 10, 137, 15, hudSubColor);
+                }
             }
-            DrawText(TextFormat("Local Offset: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].pos.x, parts[selectedPart].pos.y, parts[selectedPart].pos.z), 10, 159, 16, valColor);
-            DrawText(TextFormat("Mount Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].rotX, parts[selectedPart].rotY, parts[selectedPart].rotZ), 10, 181, 16, valColor);
-            DrawText(TextFormat("Sensor Rot: X=%.1f Y=%.1f Z=%.1f", parts[selectedPart].sensorRotX, parts[selectedPart].sensorRotY, parts[selectedPart].sensorRotZ), 10, 203, 16, valColor);
 
             // ================= HELP MODAL WINDOW OVERLAY =================
             if (showHelpWindow) {
@@ -1669,7 +1696,7 @@ int main() {
                 ty += 26.0f;
                 DrawText("2. 3D CAMERA & KEYBOARD SHORTCUTS", (int)tx, (int)ty, 16, GOLD);
                 ty += 22.0f;
-                DrawText("- Left Mouse Button (LMB) on 3D Model: Directly select any limb or segment", (int)tx + 10, (int)ty, 14, RAYWHITE);
+                DrawText("- Left Mouse Button (LMB) on 3D Model: Click to select, click again to deselect", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
                 DrawText("- Hold Right Mouse Button (RMB) + Move Mouse: Rotate 3D camera freely", (int)tx + 10, (int)ty, 14, RAYWHITE);
                 ty += 19.0f;
