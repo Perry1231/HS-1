@@ -9,6 +9,14 @@
 #include <cmath>
 #include <string>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#define NOUSER
+#include <windows.h>
+#include <commdlg.h>
+#endif
+
 struct PartTransform {
     Vector3 defaultPos;
     float defaultRotX;
@@ -53,6 +61,81 @@ struct ThemeOption {
     Color bgColor;
     Color gridColor;
 };
+
+// Open native Windows File Dialog to pick a CSV motion recording
+std::string OpenCsvFileDialog() {
+#ifdef _WIN32
+    char filename[MAX_PATH] = { 0 };
+    OPENFILENAMEA ofn = { 0 };
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = nullptr;
+    ofn.lpstrFilter = "CSV Motion Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = "Select HS-1 Motion Recording (.csv)";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (GetOpenFileNameA(&ofn)) {
+        return std::string(filename);
+    }
+#endif
+    return "";
+}
+
+// Helper to extract only the file name from a full path for UI display
+std::string GetShortFileName(const std::string& fullPath) {
+    size_t pos = fullPath.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        return fullPath.substr(pos + 1);
+    }
+    return fullPath;
+}
+
+// Load MotionFrame vector from a CSV file path
+bool LoadMotionCsvFromFile(const std::string& filePath, int totalParts, std::vector<MotionFrame>& outFrames) {
+    std::ifstream csvIn(filePath);
+    if (!csvIn.is_open()) return false;
+
+    std::string line;
+    std::getline(csvIn, line); // skip header
+    std::vector<MotionFrame> loaded;
+
+    while (std::getline(csvIn, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string cell;
+        MotionFrame mf;
+
+        if (!std::getline(ss, cell, ',')) continue; // Frame index
+        if (!std::getline(ss, cell, ',')) continue; // Timestamp
+        try {
+            mf.timestamp = std::stof(cell);
+        } catch (...) {
+            continue;
+        }
+
+        bool validRow = true;
+        for (int p = 0; p < totalParts; p++) {
+            try {
+                if (!std::getline(ss, cell, ',')) { validRow = false; break; }
+                mf.angles[p].x = std::stof(cell);
+                if (!std::getline(ss, cell, ',')) { validRow = false; break; }
+                mf.angles[p].y = std::stof(cell);
+                if (!std::getline(ss, cell, ',')) { validRow = false; break; }
+                mf.angles[p].z = std::stof(cell);
+            } catch (...) {
+                validRow = false;
+                break;
+            }
+        }
+        if (validRow) loaded.push_back(mf);
+    }
+    csvIn.close();
+
+    if (loaded.empty()) return false;
+    outFrames = loaded;
+    return true;
+}
 
 // Automatically locate the folder containing "Models/" relative to the executable
 bool SetupPortableWorkingDirectory() {
@@ -382,6 +465,7 @@ int main() {
     
     // Motion Recorder state
     std::vector<MotionFrame> recordedFrames;
+    std::string selectedRecordCsvPath = "hs1_motion_record.csv";
     bool isRecording = false;
     bool isPlaying = false;
     bool savedDemoStateBeforePlay = false;
@@ -390,7 +474,7 @@ int main() {
     float playbackSpeed = 1.0f; // 0.5x, 1.0x, 2.0x
     int playbackFrameIndex = 0;
     float recorderMsgTimer = 0.0f;
-    const char* recorderMsgText = "";
+    std::string recorderMsgText = "";
 
     bool bodyConnected[13] = { false }; 
 
@@ -1079,9 +1163,9 @@ int main() {
             // --- VERTICAL STACK OF MAIN BUTTONS ON THE RIGHT ---
             float btnX = px + 25.0f;
             float btnW = panelW - 50.0f;
-            float btnH = 46.0f;
-            float curY = 250.0f;
-            float gapY = 14.0f;
+            float btnH = 42.0f;
+            float curY = 248.0f;
+            float gapY = 12.0f;
 
             // 1. REC Button
             Rectangle btnRec = { btnX, curY, btnW, btnH };
@@ -1089,7 +1173,7 @@ int main() {
             DrawRectangleRec(btnRec, isRecording ? RED : (hoverRec ? MAROON : (Color){ 170, 30, 30, 255 }));
             DrawRectangleLines((int)btnRec.x, (int)btnRec.y, (int)btnRec.width, (int)btnRec.height, RAYWHITE);
             int wRec = MeasureText("REC (Start Capture)", 16);
-            DrawText("REC (Start Capture)", (int)(btnRec.x + (btnRec.width - wRec) / 2), (int)btnRec.y + 15, 16, RAYWHITE);
+            DrawText("REC (Start Capture)", (int)(btnRec.x + (btnRec.width - wRec) / 2), (int)btnRec.y + 13, 16, RAYWHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverRec) {
                 if (isPlaying) {
                     isPlaying = false;
@@ -1111,7 +1195,7 @@ int main() {
             DrawRectangleRec(btnStop, hoverStop ? LIGHTGRAY : GRAY);
             DrawRectangleLines((int)btnStop.x, (int)btnStop.y, (int)btnStop.width, (int)btnStop.height, BLACK);
             int wStop = MeasureText("STOP", 16);
-            DrawText("STOP", (int)(btnStop.x + (btnStop.width - wStop) / 2), (int)btnStop.y + 15, 16, BLACK);
+            DrawText("STOP", (int)(btnStop.x + (btnStop.width - wStop) / 2), (int)btnStop.y + 13, 16, BLACK);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverStop) {
                 if (isRecording || isPlaying) {
                     isRecording = false;
@@ -1131,7 +1215,7 @@ int main() {
             DrawRectangleRec(btnPlay, isPlaying ? LIME : (hoverPlay ? GREEN : DARKGREEN));
             DrawRectangleLines((int)btnPlay.x, (int)btnPlay.y, (int)btnPlay.width, (int)btnPlay.height, RAYWHITE);
             int wPlay = MeasureText("PLAY (Replay Motion)", 16);
-            DrawText("PLAY (Replay Motion)", (int)(btnPlay.x + (btnPlay.width - wPlay) / 2), (int)btnPlay.y + 15, 16, isPlaying ? BLACK : RAYWHITE);
+            DrawText("PLAY (Replay Motion)", (int)(btnPlay.x + (btnPlay.width - wPlay) / 2), (int)btnPlay.y + 13, 16, isPlaying ? BLACK : RAYWHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverPlay) {
                 if (!recordedFrames.empty()) {
                     isRecording = false;
@@ -1145,7 +1229,7 @@ int main() {
                     recorderMsgText = "Playing recorded trajectory...";
                     recorderMsgTimer = 2.5f;
                 } else {
-                    recorderMsgText = "No frames! Press REC or LOAD CSV.";
+                    recorderMsgText = "No frames! Press REC or SELECT CSV.";
                     recorderMsgTimer = 3.0f;
                 }
             }
@@ -1157,7 +1241,7 @@ int main() {
             DrawRectangleRec(btnExport, hoverExport ? SKYBLUE : BLUE);
             DrawRectangleLines((int)btnExport.x, (int)btnExport.y, (int)btnExport.width, (int)btnExport.height, RAYWHITE);
             int wExp = MeasureText("EXPORT CSV", 16);
-            DrawText("EXPORT CSV", (int)(btnExport.x + (btnExport.width - wExp) / 2), (int)btnExport.y + 15, 16, RAYWHITE);
+            DrawText("EXPORT CSV", (int)(btnExport.x + (btnExport.width - wExp) / 2), (int)btnExport.y + 13, 16, RAYWHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverExport) {
                 if (!recordedFrames.empty()) {
                     std::ofstream csvOut("hs1_motion_record.csv");
@@ -1178,6 +1262,7 @@ int main() {
                             csvOut << "\n";
                         }
                         csvOut.close();
+                        selectedRecordCsvPath = "hs1_motion_record.csv";
                         recorderMsgText = "Saved: hs1_motion_record.csv";
                         recorderMsgTimer = 3.5f;
                     }
@@ -1188,60 +1273,64 @@ int main() {
             }
             curY += btnH + gapY;
 
-            // 5. LOAD CSV Button
-            Rectangle btnLoadCsv = { btnX, curY, btnW, 36.0f };
-            bool hoverLoadCsv = CheckCollisionPointRec(mousePos, btnLoadCsv);
-            DrawRectangleRec(btnLoadCsv, hoverLoadCsv ? GOLD : DARKGRAY);
-            DrawRectangleLines((int)btnLoadCsv.x, (int)btnLoadCsv.y, (int)btnLoadCsv.width, (int)btnLoadCsv.height, LIGHTGRAY);
-            int wLoad = MeasureText("LOAD CSV FOR PLAYBACK", 14);
-            DrawText("LOAD CSV FOR PLAYBACK", (int)(btnLoadCsv.x + (btnLoadCsv.width - wLoad) / 2), (int)btnLoadCsv.y + 11, 14, hoverLoadCsv ? BLACK : RAYWHITE);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverLoadCsv) {
-                std::ifstream csvIn("hs1_motion_record.csv");
-                if (csvIn.is_open()) {
-                    std::string line;
-                    std::getline(csvIn, line);
+            // 5. SELECT CSV FILE FROM PC Button
+            Rectangle btnBrowseCsv = { btnX, curY, btnW, 38.0f };
+            bool hoverBrowseCsv = CheckCollisionPointRec(mousePos, btnBrowseCsv);
+            DrawRectangleRec(btnBrowseCsv, hoverBrowseCsv ? SKYBLUE : (Color){ 45, 95, 145, 255 });
+            DrawRectangleLines((int)btnBrowseCsv.x, (int)btnBrowseCsv.y, (int)btnBrowseCsv.width, (int)btnBrowseCsv.height, RAYWHITE);
+            int wBrowse = MeasureText("SELECT CSV FILE FROM PC...", 14);
+            DrawText("SELECT CSV FILE FROM PC...", (int)(btnBrowseCsv.x + (btnBrowseCsv.width - wBrowse) / 2), (int)btnBrowseCsv.y + 12, 14, hoverBrowseCsv ? BLACK : RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverBrowseCsv) {
+                std::string picked = OpenCsvFileDialog();
+                if (!picked.empty()) {
+                    selectedRecordCsvPath = picked;
                     std::vector<MotionFrame> loaded;
-                    while (std::getline(csvIn, line)) {
-                        if (line.empty()) continue;
-                        std::stringstream ss(line);
-                        std::string cell;
-                        MotionFrame mf;
-                        if (!std::getline(ss, cell, ',')) continue;
-                        if (!std::getline(ss, cell, ',')) continue;
-                        mf.timestamp = std::stof(cell);
-
-                        bool validRow = true;
-                        for (int p = 0; p < totalParts; p++) {
-                            if (!std::getline(ss, cell, ',')) { validRow = false; break; }
-                            mf.angles[p].x = std::stof(cell);
-                            if (!std::getline(ss, cell, ',')) { validRow = false; break; }
-                            mf.angles[p].y = std::stof(cell);
-                            if (!std::getline(ss, cell, ',')) { validRow = false; break; }
-                            mf.angles[p].z = std::stof(cell);
-                        }
-                        if (validRow) loaded.push_back(mf);
-                    }
-                    csvIn.close();
-                    if (!loaded.empty()) {
+                    if (LoadMotionCsvFromFile(selectedRecordCsvPath, totalParts, loaded)) {
                         isRecording = false;
                         isPlaying = false;
                         recordedFrames = loaded;
                         playbackFrameIndex = 0;
                         playbackTime = 0.0f;
-                        recorderMsgText = TextFormat("Loaded %i frames from CSV!", (int)recordedFrames.size());
+                        recorderMsgText = TextFormat("Loaded %i frames!", (int)recordedFrames.size());
                         recorderMsgTimer = 3.5f;
                     } else {
-                        recorderMsgText = "CSV file is empty or invalid.";
-                        recorderMsgTimer = 3.0f;
+                        recorderMsgText = "Selected CSV is empty or invalid!";
+                        recorderMsgTimer = 3.5f;
                     }
+                }
+            }
+            curY += 38.0f + 8.0f;
+
+            // Display currently selected CSV file name
+            std::string shortCsvName = GetShortFileName(selectedRecordCsvPath);
+            DrawText(TextFormat("File: %s", shortCsvName.c_str()), (int)btnX, (int)curY, 13, SKYBLUE);
+            curY += 20.0f;
+
+            // 6. LOAD SELECTED CSV FOR PLAYBACK Button
+            Rectangle btnLoadCsv = { btnX, curY, btnW, 36.0f };
+            bool hoverLoadCsv = CheckCollisionPointRec(mousePos, btnLoadCsv);
+            DrawRectangleRec(btnLoadCsv, hoverLoadCsv ? GOLD : DARKGRAY);
+            DrawRectangleLines((int)btnLoadCsv.x, (int)btnLoadCsv.y, (int)btnLoadCsv.width, (int)btnLoadCsv.height, LIGHTGRAY);
+            int wLoad = MeasureText("RELOAD SELECTED CSV", 14);
+            DrawText("RELOAD SELECTED CSV", (int)(btnLoadCsv.x + (btnLoadCsv.width - wLoad) / 2), (int)btnLoadCsv.y + 11, 14, hoverLoadCsv ? BLACK : RAYWHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverLoadCsv) {
+                std::vector<MotionFrame> loaded;
+                if (LoadMotionCsvFromFile(selectedRecordCsvPath, totalParts, loaded)) {
+                    isRecording = false;
+                    isPlaying = false;
+                    recordedFrames = loaded;
+                    playbackFrameIndex = 0;
+                    playbackTime = 0.0f;
+                    recorderMsgText = TextFormat("Loaded %i frames from CSV!", (int)recordedFrames.size());
+                    recorderMsgTimer = 3.5f;
                 } else {
-                    recorderMsgText = "hs1_motion_record.csv not found!";
-                    recorderMsgTimer = 3.0f;
+                    recorderMsgText = "File not found or invalid CSV!";
+                    recorderMsgTimer = 3.5f;
                 }
             }
 
             if (recorderMsgTimer > 0.0f) {
-                DrawText(recorderMsgText, (int)px + 25, (int)curY + 48, 15, YELLOW);
+                DrawText(recorderMsgText.c_str(), (int)px + 25, (int)curY + 46, 15, YELLOW);
             }
 
         } else if (!is2DMode) {
