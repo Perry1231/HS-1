@@ -8,14 +8,7 @@
 #include <vector>
 #include <cmath>
 #include <string>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOGDI
-#define NOUSER
-#include <windows.h>
-#include <commdlg.h>
-#endif
+#include <cstdio>
 
 struct PartTransform {
     Vector3 defaultPos;
@@ -62,24 +55,34 @@ struct ThemeOption {
     Color gridColor;
 };
 
-// Open native Windows File Dialog to pick a CSV motion recording
+// Open native Windows File Dialog without including <windows.h> (avoids raylib Rectangle/CloseWindow conflicts)
 std::string OpenCsvFileDialog() {
 #ifdef _WIN32
-    char filename[MAX_PATH] = { 0 };
-    OPENFILENAMEA ofn = { 0 };
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr;
-    ofn.lpstrFilter = "CSV Motion Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0";
-    ofn.lpstrFile = filename;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrTitle = "Select HS-1 Motion Recording (.csv)";
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    const char* cmd =
+        "powershell -NoProfile -Command \""
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$f.Filter = 'CSV Motion Files (*.csv)|*.csv|All Files (*.*)|*.*'; "
+        "$f.Title = 'Select HS-1 Motion Recording (.csv)'; "
+        "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }\"";
 
-    if (GetOpenFileNameA(&ofn)) {
-        return std::string(filename);
+    FILE* pipe = _popen(cmd, "r");
+    if (!pipe) return "";
+
+    char buffer[1024];
+    std::string result;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result += buffer;
     }
-#endif
+    _pclose(pipe);
+
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r' || result.back() == ' ')) {
+        result.pop_back();
+    }
+    return result;
+#else
     return "";
+#endif
 }
 
 // Helper to extract only the file name from a full path for UI display
